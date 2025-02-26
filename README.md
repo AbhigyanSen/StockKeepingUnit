@@ -5,9 +5,6 @@ Use Case: Merge the New Data (sl_cpg_data-new-items.csv) with the main Master Da
 Description (Example Use Case)
 Suppose Amul is a company having multiple products in its inventory. Now, Amul maintains a Database (Master Table) for its inventory management to track which items are appeneded (newly produced) and which items are removed (sent to wholesellers/dealers from amul's warehouse). Again the dealers also maintain a database containing which products are pushed (added to their inventory) and popped (sold to customers/retailers).
 Now, lets Suppose the case below:
-            CATEGORY            PRODUCT        PRODUCT ABB. (as stored in database)  PRODUCT ID
-(master)    AMUL                AMUL TAAZA     TZ                                    98797
-(new data)  AMUL WHOLESALER     AMUL TAAZA     ATZ                                   AS1223
 
 |              | Category        | Product      | Abbreviation    |
 | :---         |    :----:       |         ---: |            ---: |
