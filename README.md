@@ -4,7 +4,7 @@
 
 ## 🎯 Objective
 
-> The objective of this project is to match and synchronize data between two CSV files: <br> `-- **master.csv** and **transaction.csv**. 
+> The objective of this project is to match and synchronize data between two CSV files: <br> **master.csv** and **transaction.csv**. 
 
 The **Version 2** of this project is to enhance SKU matching accuracy by **extracting clean product names** from raw item descriptions using a **local LLM** (Mistral via Ollama).
 This overcomes limitations of traditional filtering and fuzzy matching by leveraging semantic understanding from language 
@@ -19,9 +19,10 @@ This overcomes limitations of traditional filtering and fuzzy matching by levera
 
 <br>
 
-### 🔁 Input & Output
+## 🔁 Input & Output
 🔹 **Input File:** `DataCleaned/transaction_cleaned.csv`  
 _Must contain a column named_ `ITEMDESC`.
+<br>
 🔹 **Output File:** `ProductName.csv`  
 _Includes all original columns plus an additional column_ `Product` 
 
@@ -46,8 +47,8 @@ StockKeepingUnit
 ## 🚀 How It Works
 `main.py` uses the Mistral model served via Ollama to extract structured product names from the raw `ITEMDESC` field of the transaction file.
 
-> Example:
-**Input**: `CHANDANALEPA KOHOMBA AYURVEDA SOAP/75GM/CDBOX`
+> Example: <br>
+**Input**: `CHANDANALEPA KOHOMBA AYURVEDA SOAP/75GM/CDBOX` <br>
 **Output**: `CHANDANALEPA KOHOMBA AYURVEDA SOAP`
 
 <br>
@@ -55,25 +56,17 @@ StockKeepingUnit
 ## 🛠️ Setup Guide (Windows)
 
  1. **Install Ollama**
-Download the installer from: https://ollama.com/download
-Install it and let it run in the background. It creates a local server at `http://localhost:11434`.
+ - Download the installer from: https://ollama.com/download
+ - Install it and let it run in the background. It creates a local server at `http://localhost:11434`.
 
  2. **Pull the Mistral Model**
-Open PowerShell or CMD and run: *(download size 4GB)*
-```sh
-ollama pull mistral
-```
+ - Open PowerShell or CMD and run: *(download size 4GB)*
+ - `ollama pull mistral`
 
  3. **Start the Mistral Server**
-```sh
-ollama run mistral
-```
-or
-```sh
-ollama serve
-```
-- This will launch the model in a conversational loop. For API usage, Ollama already runs a - background API server at `http://localhost:11434`.
-- You can keep ollama run mistral running in one terminal, or simply rely on the background service launched by Ollama on Windows startup.
+ - `ollama run mistral` or `ollama serve`
+ - This will launch the model in a conversational loop. For API usage, Ollama already runs a - background API server at `http://localhost:11434`.
+ - You can keep ollama run mistral running in one terminal, or simply rely on the background service launched by Ollama on Windows startup.
 
 <br>
 
@@ -113,5 +106,5 @@ This will:
 
 |Version|Changes|
 |:-|:-|
-|**v1**|Rule-based + fuzzy matching|
-|**v2**|LLM-powered item name extraction using Mistral via Ollama|
+|**v1**|*Rule-based + fuzzy matching*|
+|**v2**|*LLM-powered item name extraction using Mistral via Ollama*|
