@@ -58,4 +58,4 @@ def process_csv(input_csv, output_csv):
 
 # Example usage
 if __name__ == "__main__":
-    process_csv(R"DataCleaned\transaction_cleaned.csv", "ProductName.csv")
+    process_csv(R"Data\DataCleaned\transaction_cleaned.csv", "ProductName.csv")
