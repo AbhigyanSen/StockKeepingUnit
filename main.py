@@ -5,8 +5,8 @@ import time
 from difflib import SequenceMatcher
 
 # Load CSVs
-master = pd.read_csv(r"D:\Projects\SKU\StockKeepingUnit\Labelled_Data\master.csv")
-transactions = pd.read_csv(r"D:\Projects\SKU\StockKeepingUnit\transaction_FROMLABELLED.csv")
+master = pd.read_csv(r"/home/dcsadmin/Documents/del_SKU/StockKeepingUnit/Labelled_Data/master.csv").fillna("")
+transactions = pd.read_csv(r"/home/dcsadmin/Documents/del_SKU/StockKeepingUnit/transaction_FROMLABELLED.csv").fillna("")
 
 PACKTYPE_EQUIVALENCE = {
     "CDB": ["CDB", "CDBOX"]
@@ -29,12 +29,15 @@ def extract_product_name_ollama(description, model="mistral"):
         return f"Error: {str(e)}"
 
 def similar_str(a, b, threshold=0.85):
+    if not isinstance(a, str) or not isinstance(b, str):
+        return False
     return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= threshold
 
 def packsize_match(p1, p2):
     return re.sub(r'\.0+', '', p1.replace(" ", "").upper()) == re.sub(r'\.0+', '', p2.replace(" ", "").upper())
 
 results = []
+
 for idx, row in transactions.iterrows():
     input_vals = {
         "MANUFACTURE": str(row['MANUFACTURE']).strip(),
@@ -48,12 +51,12 @@ for idx, row in transactions.iterrows():
 
     A = master[master['company'].str.strip().str.upper() == input_vals["MANUFACTURE"].upper()]
     if A.empty:
-        results.append([*row, 1] + [''] * len(master.columns) + ['MANUFACTURE', ''])
+        results.append(list(row) + [1] + [''] * len(master.columns) + ['MANUFACTURE', ''])
         continue
 
     B = A[A['brand'].str.strip().str.upper() == input_vals["BRAND"].upper()]
     if B.empty:
-        results.append([*row, 1] + [''] * len(master.columns) + ['BRAND', ''])
+        results.append(list(row) + [1] + [''] * len(master.columns) + ['BRAND', ''])
         continue
 
     C = B[B['qty'] == input_vals["QTY"]]
@@ -62,30 +65,27 @@ for idx, row in transactions.iterrows():
         if not D.empty:
             E = D
         else:
-            # Try packsize similarity
             E = C[C['pack_size'].apply(lambda x: packsize_match(str(x), input_vals["PACKSIZE"]))]
     else:
-        # Try packsize similarity directly
         E = B[B['pack_size'].apply(lambda x: packsize_match(str(x), input_vals["PACKSIZE"]))]
 
     if E.empty:
-        results.append([*row, 1] + [''] * len(master.columns) + ['PACKSIZE', ''])
+        results.append(list(row) + [1] + [''] * len(master.columns) + ['PACKSIZE', ''])
         continue
 
     match_packtypes = PACKTYPE_EQUIVALENCE.get(input_vals["PACKTYPE"], [input_vals["PACKTYPE"]])
     F = E[E['packaging'].isin(match_packtypes)]
 
     if F.empty:
-        # Try spelling similarity
-        F = E[E['packaging'].apply(lambda x: similar_str(x, input_vals["PACKTYPE"]))]
+        F = E[E['packaging'].apply(lambda x: similar_str(str(x), input_vals["PACKTYPE"]))]
         if F.empty:
-            results.append([*row, 1] + [''] * len(master.columns) + ['PACKTYPE', ''])
+            results.append(list(row) + [1] + [''] * len(master.columns) + ['PACKTYPE', ''])
             continue
 
     product_name = extract_product_name_ollama(input_vals["ITEMDESC"])
     time.sleep(1)
     if product_name.startswith("Error:"):
-        results.append([*row, 1] + [''] * len(master.columns) + ['ITEMDESC', product_name])
+        results.append(list(row) + [1] + [''] * len(master.columns) + ['ITEMDESC', product_name])
         continue
 
     F = F.copy()
@@ -95,12 +95,18 @@ for idx, row in transactions.iterrows():
     match_rows = F[F["llm_product_name"].str.strip().str.upper() == product_name.strip().upper()]
     if not match_rows.empty:
         match = match_rows.iloc[0]
-        results.append([*row, 0] + list(match) + ['', product_name])
+        results.append(list(row) + [0] + list(match[master.columns]) + ['', product_name])
     else:
-        results.append([*row, 2] + [''] * len(master.columns) + ['ITEMDESC', product_name])
+        results.append(list(row) + [2] + [''] * len(master.columns) + ['ITEMDESC', product_name])
 
 # Columns setup
 columns = list(transactions.columns) + ['MATCHED'] + list(master.columns) + ['ERROR', 'ProductName']
+
+# Debugging check
+for i, r in enumerate(results):
+    if len(r) != len(columns):
+        print(f"⚠️ Row {i} has {len(r)} columns, expected {len(columns)}")
+
 results_df = pd.DataFrame(results, columns=columns)
 results_df.to_csv("matches.csv", index=False)
-print("Matching complete. Results saved to matches.csv.")
+print("✅ Matching complete. Results saved to matches.csv.")
