@@ -4,13 +4,15 @@ import re
 import time
 from difflib import SequenceMatcher
 
-# Load CSVs
-master = pd.read_csv(r"/home/dcsadmin/Documents/del_SKU/StockKeepingUnit/Labelled_Data/master.csv").fillna("")
-transactions = pd.read_csv(r"/home/dcsadmin/Documents/del_SKU/StockKeepingUnit/transaction_FROMLABELLED.csv").fillna("")
+# Load Data
+master = pd.read_csv("/home/dcsadmin/Documents/del_SKU/StockKeepingUnit/Labelled_Data/master.csv").fillna("")
+transactions = pd.read_csv("/home/dcsadmin/Documents/del_SKU/StockKeepingUnit/Labelled_Data/transaction.csv").fillna("")
 
 PACKTYPE_EQUIVALENCE = {
     "CDB": ["CDB", "CDBOX"]
 }
+
+# ----- UTILITIES -----
 
 def extract_product_name_ollama(description, model="mistral"):
     prompt = (
@@ -28,6 +30,14 @@ def extract_product_name_ollama(description, model="mistral"):
     except Exception as e:
         return f"Error: {str(e)}"
 
+def split_item_desc(desc):
+    tokens = re.split(r"(FREE|SAVE|DISCOUNT|RS\s*\d+)", desc, flags=re.IGNORECASE)
+    if len(tokens) > 1:
+        main = tokens[0].strip()
+        offer = ' '.join(tokens[1:]).strip()
+        return main, offer
+    return desc.strip(), ""
+
 def similar_str(a, b, threshold=0.85):
     if not isinstance(a, str) or not isinstance(b, str):
         return False
@@ -35,6 +45,8 @@ def similar_str(a, b, threshold=0.85):
 
 def packsize_match(p1, p2):
     return re.sub(r'\.0+', '', p1.replace(" ", "").upper()) == re.sub(r'\.0+', '', p2.replace(" ", "").upper())
+
+# ----- MAIN PROCESSING -----
 
 results = []
 
@@ -65,7 +77,7 @@ for idx, row in transactions.iterrows():
         if not D.empty:
             E = D
         else:
-            E = C[C['pack_size'].apply(lambda x: packsize_match(str(x), input_vals["PACKSIZE"]))]
+            E = C[C['pack_size'].apply(lambda x: packsize_match(str(x), input_vals["PACKSIZE"]))]  
     else:
         E = B[B['pack_size'].apply(lambda x: packsize_match(str(x), input_vals["PACKSIZE"]))]
 
@@ -82,31 +94,48 @@ for idx, row in transactions.iterrows():
             results.append(list(row) + [1] + [''] * len(master.columns) + ['PACKTYPE', ''])
             continue
 
+    # LLM extraction & split
     product_name = extract_product_name_ollama(input_vals["ITEMDESC"])
     time.sleep(1)
     if product_name.startswith("Error:"):
         results.append(list(row) + [1] + [''] * len(master.columns) + ['ITEMDESC', product_name])
         continue
 
-    F = F.copy()
-    F["llm_product_name"] = F["itemdesc"].astype(str).apply(extract_product_name_ollama)
-    time.sleep(1)
+    trans_main, trans_offer = split_item_desc(product_name)
 
-    match_rows = F[F["llm_product_name"].str.strip().str.upper() == product_name.strip().upper()]
-    if not match_rows.empty:
-        match = match_rows.iloc[0]
-        results.append(list(row) + [0] + list(match[master.columns]) + ['', product_name])
+    def score_match(master_desc):
+        master_name = extract_product_name_ollama(master_desc)
+        time.sleep(1)
+        master_main, master_offer = split_item_desc(master_name)
+        main_score = SequenceMatcher(None, trans_main.upper(), master_main.upper()).ratio()
+        offer_score = SequenceMatcher(None, trans_offer.upper(), master_offer.upper()).ratio()
+        return (main_score + offer_score) / 2, master_name
+
+    # Score all matches
+    match_scores = []
+    for _, f_row in F.iterrows():
+        score, m_name = score_match(f_row["itemdesc"])
+        match_scores.append((score, m_name, f_row))
+
+    # Sort and select top 3
+    match_scores = sorted(match_scores, key=lambda x: x[0], reverse=True)
+    top_matches = match_scores[:3]
+
+    if top_matches and top_matches[0][0] >= 0.85:
+        top = top_matches[0][2]
+        results.append(list(row) + [0] + list(top[master.columns]) + ['', top_matches[0][1]])
     else:
         results.append(list(row) + [2] + [''] * len(master.columns) + ['ITEMDESC', product_name])
 
-# Columns setup
+# Final Columns
 columns = list(transactions.columns) + ['MATCHED'] + list(master.columns) + ['ERROR', 'ProductName']
 
-# Debugging check
+# Debug mismatch checker
 for i, r in enumerate(results):
     if len(r) != len(columns):
         print(f"⚠️ Row {i} has {len(r)} columns, expected {len(columns)}")
 
+# Save
 results_df = pd.DataFrame(results, columns=columns)
-results_df.to_csv("matches.csv", index=False)
-print("✅ Matching complete. Results saved to matches.csv.")
+results_df.to_csv("matches1.csv", index=False)
+print("✅ Matching complete. Results saved to matches1.csv.")
