@@ -1,6 +1,6 @@
 # Stock Keeping Unit
 
-![Static Badge](https://img.shields.io/badge/Version_3-LLM_Enhanced_with_Suggestions-green)
+![Static Badge](https://img.shields.io/badge/Version_3-LLM_Enhanced_with_Suggestions-white)
 
 ## 🎯 Objective
 
