@@ -62,8 +62,11 @@ StockKeepingUnit/
 <br>
 
 ## 🚀 How It Works
+
 <br>
+
 📌 `main.py`
+
 - Reads in `master.csv` and `transaction.csv`
 - Applies multi-layered filtering: `MANUFACTURE`, `BRAND`, `QTY`, `UNIT`, `PACKSIZE`, `PACKTYPE`
 - Extracts clean product names using **Mistral LLM**
@@ -73,12 +76,16 @@ StockKeepingUnit/
     * `1`: No match
     * `2`: Partial match (low confidence or ambiguous match)
 - Annotates errors such as mismatches in MANUFACTURE, BRAND, etc.
+
 <br>
-📌 suggestion.py
+
+📌 `suggestion.py`
+
 - Reads `matches.csv`
 - For rows where `MATCHED == 1` (i.e., no confident match), generates fallback suggestions
 - Uses string similarity logic across multiple fields to suggest the most likely item code
 - Appends a `Suggestion` column and saves as `matches+suggestions.csv`
+
 
 <br>
 
