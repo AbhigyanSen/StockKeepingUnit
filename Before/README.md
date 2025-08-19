@@ -1,25 +1,36 @@
 # Stock Keeping Unit
 
-![Static Badge](https://img.shields.io/badge/Version_4-Developing_wrt_New_Format-yellow)
+![Static Badge](https://img.shields.io/badge/Version_3-LLM_Enhanced_with_Suggestions-white)
 
 ## 🎯 Objective
 
 > This project aims to intelligently match and synchronize data between two CSV files:
 **master.csv** and **transaction.csv**.
 
-The **Version 4** is developed in accordance wrt to the new format provided by the Client. The Data Preprocessing logic has been changed. The changes can be seen in `DataPreprocessing.ipynb` in the section `Working with Nepal Data`.
+The **Version 3** upgrade builds on LLM-powered product name extraction by integrating it with a structured SKU matching pipeline. It adds string matching logic, structured comparison, and fallback suggestion mechanisms to handle imperfect data, all while staying fully offline using a local Mistral model served via Ollama.
 
-The Suggestion part and the LLM part is yet to be integrated with this version.
+<br>
+
+## 🆕 Key Features
+
+- Enhanced product name extraction using **Mistral** (LLM via Ollama).
+- Intelligent matching across multiple attributes (company, brand, pack size, unit, etc.).
+- **Fallback Suggestion Engine** for unmatched items using similarity scoring.
+- Full tracking of matched, unmatched, and partially matched rows with reasons.
+- Outputs results in a match report `matches.csv` and a suggestions-enhanced file `matches+suggestions.csv`.
 
 <br>
 
 ## 🔁 Input & Output
 
 - Input Files       *previously processed data in* `DataPreprocessing.ipynb`
-    * `Data/master.csv`
-    * `Data/transaction.csv`
+    * `Labelled_Data/master.csv`
+    * `Labelled_Data/transaction.csv`
 - Output Files
-    * `matches_sequence.csv` – Full results with match status and error reasons.
+    * `matches.csv` – Full results with match status and error reasons.
+    * `matches+suggestions.csv` – Same as above with a Suggestion column populated for fallback cases.
+
+> Unmatched rows are analyzed separately to suggest the most probable item code from master data.
 
 <br>
 
@@ -28,19 +39,28 @@ The Suggestion part and the LLM part is yet to be integrated with this version.
 ```sh
 StockKeepingUnit/
 ├── Data/
-│   ├── DataCleaned/
-│		├── master_cleaned.csv
+│   ├── ActualModelResults
+│		├── ACTUAL_ModelResult_2024-10__dated_2024-05-23.xlsx		# Results from Benchmarked Model
+│		├── October_ACTUAL_ModelResults (labelled).xlsx				# Labelled Data provided by Client
+│   └── DataCleaned/												# Dropping unnecessary columns
+│		├── master_cleaned.csv							
 │		├── transaction_cleaned.csv
 │   ├── master.csv
-│   ├── transaction.csv										
+│   └── transaction.csv
+├── Labelled_Data/
+│   ├── Data.xlsx
+│   ├── master.csv
+│   └── transaction.csv
+├── Result_Verification/											# Model Evaluation
+│   └── Version_2.3.2/											
 ├── main.py
 ├── suggestion.py
-└── matches_sequence.csv
+├── matches.csv
+└── matches+suggestions.csv
 ```
 
 <br>
 
-# DO NOT REFER TO THE SECTIONS BELOW (not updated wrt Version 4)
 ## 🚀 How It Works
 
 <br>
