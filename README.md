@@ -20,7 +20,7 @@ The **Version 4** is being developed wrt to the new format provided by the Clien
 <br><span style="display:inline-block; margin-top:20px; margin-bottom:0px; margin-right:0px;"></span>*for* **`DataPreprocessing.ipynb`**
     * `Data/DataCleaned/master_cleaned.csv`
     * `Data/DataCleaned/transaction_cleaned.csv`
-<br><span style="display:inline-block; margin-top:-15px; margin-bottom:40px; margin-right:-40px;"></span>
+<br><span style="display:inline-block; margin-top:20px; margin-bottom:0px; margin-right:0px;"></span>
 *for* **`main.ipynb`**
     * `Data/master.csv`
     * `Data/transaction.csv`
