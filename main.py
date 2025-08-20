@@ -4,23 +4,39 @@ import re
 import time
 from difflib import SequenceMatcher
 
-# Load Data
+# ---------- Load Data ----------
 master = pd.read_csv("/home/dcsadmin/Documents/del_SKU/StockKeepingUnit/Data/DataCleaned/master_cleaned.csv").fillna("")
 transactions = pd.read_csv("/home/dcsadmin/Documents/del_SKU/StockKeepingUnit/Data/DataCleaned/transaction_cleaned.csv").fillna("")
 
+# ---------- Config ----------
 PACKTYPE_EQUIVALENCE = {
-    "CDB": ["CDB", "CDBOX"]
+    "CDB": ["CDB", "CDBOX"],
+    "HL": ["HL", "HARDLINE", "HL PACK"]  # extend as needed
 }
 
-# ----- UTILITIES -----
+# ---------- Scoring Mechanism ----------
+MATCH_WEIGHTS = {
+    "manufacture": 0.4,
+    "brand": 0.3,
+    "category": 0.1,
+    "packsize": 0.1,
+    "packtype": 0.1
+}
 
+MATCH_THRESHOLD = 0.75  # below this → fallback to LLM
+
+
+# ---------- Utilities ----------
 def extract_product_name_ollama(description, model="mistral"):
     prompt = (
         f"Extract only the product name from the following description. "
         f"Do not include quantity, unit, or pack type:\n\n{description}\n\nProduct name:"
     )
     try:
-        response = requests.post("http://localhost:11434/api/generate", json={"model": model, "prompt": prompt, "stream": False})
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={"model": model, "prompt": prompt, "stream": False},
+        )
         if response.status_code == 200:
             raw = response.json()["response"].strip()
             cleaned = re.sub(r"\(.*?\)", "", raw).strip()
@@ -30,157 +46,135 @@ def extract_product_name_ollama(description, model="mistral"):
     except Exception as e:
         return f"Error: {str(e)}"
 
-def split_item_desc(desc):
-    tokens = re.split(r"(FREE|SAVE|DISCOUNT|RS\s*\d+)", desc, flags=re.IGNORECASE)
-    if len(tokens) > 1:
-        main = tokens[0].strip()
-        offer = ' '.join(tokens[1:]).strip()
-        return main, offer
-    return desc.strip(), ""
 
-def similar_str(a, b, threshold=0.85):
+def similar_str(a, b):
     if not isinstance(a, str) or not isinstance(b, str):
-        return False
-    return SequenceMatcher(None, a.lower(), b.lower()).ratio() >= threshold
+        return 0.0
+    return SequenceMatcher(None, a.strip().lower(), b.strip().lower()).ratio()
+
 
 def packsize_match(p1, p2):
-    return re.sub(r'\.0+', '', p1.replace(" ", "").upper()) == re.sub(r'\.0+', '', p2.replace(" ", "").upper())
+    return re.sub(r"\.0+", "", str(p1).replace(" ", "").upper()) == re.sub(
+        r"\.0+", "", str(p2).replace(" ", "").upper()
+    )
 
-# ----- MAIN PROCESSING -----
 
+def score_row(master_row, trans_row):
+    """Score a master row against transaction row"""
+    score = 0
+
+    # Manufacture
+    score += MATCH_WEIGHTS["manufacture"] * similar_str(
+        master_row["company"], trans_row["manufacture"]
+    )
+
+    # Brand
+    score += MATCH_WEIGHTS["brand"] * similar_str(
+        master_row["brand"], trans_row["brand"]
+    )
+
+    # Category
+    score += (
+        MATCH_WEIGHTS["category"]
+        if str(master_row["catcode"]).strip().upper()
+        == str(trans_row["category"]).strip().upper()
+        else 0
+    )
+
+    # Packsize
+    score += (
+        MATCH_WEIGHTS["packsize"]
+        if packsize_match(master_row["qty"], trans_row["packsize"])
+        else 0
+    )
+
+    # Packtype
+    match_packtypes = PACKTYPE_EQUIVALENCE.get(
+        trans_row["packtype"], [trans_row["packtype"]]
+    )
+    score += (
+        MATCH_WEIGHTS["packtype"]
+        if str(master_row["packtype"]).upper() in [s.upper() for s in match_packtypes]
+        else 0
+    )
+
+    return score
+
+
+# ---------- Main Processing ----------
 results = []
 
 for idx, row in transactions.iterrows():
-    # Collect transaction row values in lowercase keys
-    input_vals = {
-        "manufacture": str(row['MANUFACTURE']).strip(),
-        "brand": str(row['BRAND']).strip(),
-        "category": str(row['CATEGORY']).strip(),
-        "itemdesc": str(row['ITEMDESC']).strip(),
-        "qty": row['qty'],
-        "uomdesc": str(row['uomdesc']).strip(),
-        "packsize": str(row['PACKSIZE']).strip(),
-        "packtype": str(row['PACKTYPE']).strip()
+    trans_vals = {
+        "manufacture": str(row["MANUFACTURE"]).strip(),
+        "brand": str(row["BRAND"]).strip(),
+        "category": str(row["CATEGORY"]).strip(),
+        "itemdesc": str(row["ITEMDESC"]).strip(),
+        "qty": row.get("qty", ""),
+        "uomdesc": row.get("uomdesc", ""),
+        "packsize": str(row["PACKSIZE"]).strip(),
+        "packtype": str(row["PACKTYPE"]).strip(),
     }
 
-    # 1. Match by MANUFACTURE
-    A = master[master['company'].str.strip().str.upper() == input_vals["manufacture"].upper()]
-    if A.empty:
-        results.append(list(row) + [1] + [''] * len(master.columns) + ['MANUFACTURE', ''])
-        continue
+    # Score every master row
+    match_scores = []
+    for _, m_row in master.iterrows():
+        s = score_row(m_row, trans_vals)
+        match_scores.append((s, m_row))
 
-    # 2. Match by BRAND
-    B = A[A['brand'].str.strip().str.upper() == input_vals["brand"].upper()]
-    if B.empty:
-        results.append(list(row) + [1] + [''] * len(master.columns) + ['BRAND', ''])
-        continue
+    # Sort by score
+    match_scores = sorted(match_scores, key=lambda x: x[0], reverse=True)
 
-    # 3. Match by CATEGORY → catcode
-    C = B[B['catcode'].astype(str).str.strip().str.upper() == input_vals["category"].upper()]
-    if C.empty:
-        results.append(list(row) + [1] + [''] * len(master.columns) + ['CATEGORY', ''])
-        continue
-
-    # 4. Match by qty
-    D = C[C['qty'] == input_vals["qty"]]
-    if not D.empty:
-        E = D[D['uomdesc'].str.strip().str.upper() == input_vals["uomdesc"].upper()]
-        if not E.empty:
-            F = E
-        else:
-            F = D[D['pack_size'].apply(lambda x: packsize_match(str(x), input_vals["packsize"]))]
+    if match_scores and match_scores[0][0] >= MATCH_THRESHOLD:
+        # ✅ High confidence match
+        best = match_scores[0][1]
+        results.append(list(row) + [0, match_scores[0][0]] + list(best[master.columns]) + ["", ""])
     else:
-        F = C[C['pack_size'].apply(lambda x: packsize_match(str(x), input_vals["packsize"]))]
-
-    if F.empty:
-        results.append(list(row) + [1] + [''] * len(master.columns) + ['PACKSIZE', ''])
-        continue
-
-    # 5. Match by PACKTYPE
-    match_packtypes = PACKTYPE_EQUIVALENCE.get(input_vals["packtype"], [input_vals["packtype"]])
-    G = F[F['packaging'].isin(match_packtypes)]
-    if G.empty:
-        G = F[F['packaging'].apply(lambda x: similar_str(str(x), input_vals["packtype"]))]
-        if G.empty:
-            results.append(list(row) + [1] + [''] * len(master.columns) + ['PACKTYPE', ''])
+        # ❌ Use LLM as fallback
+        product_name = extract_product_name_ollama(trans_vals["itemdesc"])
+        time.sleep(1)
+        if product_name.startswith("Error:"):
+            results.append(
+                list(row)
+                + [1, 0.0]
+                + [""] * len(master.columns)
+                + ["ITEMDESC", product_name]
+            )
             continue
 
-    # --- LLM extraction & scoring remains the same ---
-    product_name = extract_product_name_ollama(input_vals["itemdesc"])
-    time.sleep(1)
-    if product_name.startswith("Error:"):
-        results.append(list(row) + [1] + [''] * len(master.columns) + ['ITEMDESC', product_name])
-        continue
+        # Compare with master using LLM-extracted product names
+        llm_scores = []
+        for _, m_row in master.iterrows():
+            master_name = extract_product_name_ollama(m_row["sku"])
+            time.sleep(1)
+            score = similar_str(product_name, master_name)
+            llm_scores.append((score, m_row, master_name))
 
-    trans_main, trans_offer = split_item_desc(product_name)
+        llm_scores = sorted(llm_scores, key=lambda x: x[0], reverse=True)
 
-    def score_match(master_desc):
-        master_name = extract_product_name_ollama(master_desc)
-        time.sleep(1)
-        master_main, master_offer = split_item_desc(master_name)
-        main_score = SequenceMatcher(None, trans_main.upper(), master_main.upper()).ratio()
-        offer_score = SequenceMatcher(None, trans_offer.upper(), master_offer.upper()).ratio()
-        return (main_score + offer_score) / 2, master_name
+        if llm_scores and llm_scores[0][0] >= 0.75:
+            best = llm_scores[0][1]
+            results.append(
+                list(row)
+                + [0, llm_scores[0][0]]
+                + list(best[master.columns])
+                + ["", llm_scores[0][2]]
+            )
+        else:
+            results.append(
+                list(row)
+                + [2, 0.0]
+                + [""] * len(master.columns)
+                + ["ITEMDESC", product_name]
+            )
 
-    # Score all matches
-    match_scores = []
-    for _, f_row in G.iterrows():
-        score, m_name = score_match(f_row["itemdesc"])
-        match_scores.append((score, m_name, f_row))
-
-    # Sort and select top 3
-    match_scores = sorted(match_scores, key=lambda x: x[0], reverse=True)
-    top_matches = match_scores[:3]
-
-    if top_matches and top_matches[0][0] >= 0.85:
-        top = top_matches[0][2]
-        results.append(list(row) + [0] + list(top[master.columns]) + ['', top_matches[0][1]])
-    else:
-        results.append(list(row) + [2] + [''] * len(master.columns) + ['ITEMDESC', product_name])
-
-    # --- LLM extraction & scoring remains the same ---
-    product_name = extract_product_name_ollama(input_vals["itemdesc"])
-    time.sleep(1)
-    if product_name.startswith("Error:"):
-        results.append(list(row) + [1] + [''] * len(master.columns) + ['ITEMDESC', product_name])
-        continue
-
-    trans_main, trans_offer = split_item_desc(product_name)
-
-    def score_match(master_desc):
-        master_name = extract_product_name_ollama(master_desc)
-        time.sleep(1)
-        master_main, master_offer = split_item_desc(master_name)
-        main_score = SequenceMatcher(None, trans_main.upper(), master_main.upper()).ratio()
-        offer_score = SequenceMatcher(None, trans_offer.upper(), master_offer.upper()).ratio()
-        return (main_score + offer_score) / 2, master_name
-
-    # Score all matches
-    match_scores = []
-    for _, f_row in G.iterrows():
-        score, m_name = score_match(f_row["itemdesc"])
-        match_scores.append((score, m_name, f_row))
-
-
-    # Sort and select top 3
-    match_scores = sorted(match_scores, key=lambda x: x[0], reverse=True)
-    top_matches = match_scores[:3]
-
-    if top_matches and top_matches[0][0] >= 0.85:
-        top = top_matches[0][2]
-        results.append(list(row) + [0] + list(top[master.columns]) + ['', top_matches[0][1]])
-    else:
-        results.append(list(row) + [2] + [''] * len(master.columns) + ['ITEMDESC', product_name])
-
-# Final Columns
-columns = list(transactions.columns) + ['MATCHED'] + list(master.columns) + ['ERROR', 'ProductName']
-
-# Debug mismatch checker
-for i, r in enumerate(results):
-    if len(r) != len(columns):
-        print(f"⚠️ Row {i} has {len(r)} columns, expected {len(columns)}")
-
-# Save
+# ---------- Save ----------
+columns = (
+    list(transactions.columns)
+    + ["MATCHED", "MATCH_SCORE"]
+    + list(master.columns)
+    + ["ERROR", "ProductName"]
+)
 results_df = pd.DataFrame(results, columns=columns)
 results_df.to_csv("matches.csv", index=False)
 print("✅ Matching complete. Results saved to matches.csv.")

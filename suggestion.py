@@ -37,16 +37,34 @@ def get_best_fallback_suggestion(row, master_df):
     for _, m_row in master_df.iterrows():
         manu_sim = similar(manu, m_row['company'])
         brand_sim = similar(brand, m_row['brand'])
-        item_sim = similar(itemdesc, m_row['itemdesc'])
+        item_sim = similar(itemdesc, m_row['sku'])
         
         score = 0.4 * manu_sim + 0.2 * brand_sim + 0.4 * item_sim
         
         if score > best_score:
             best_score = score
             best_row = m_row
+
+    def validate_with_llm(trans_text, master_text):
+        prompt = (
+            f"Does the following master product description contain all important terms from the transaction?\n\n"
+            f"Transaction: {trans_text}\nMaster: {master_text}\n\n"
+            f"Answer only 'YES' or 'NO'."
+        )
+        try:
+            resp = requests.post("http://localhost:11434/api/generate",
+                                json={"model": "mistral", "prompt": prompt, "stream": False})
+            if resp.status_code == 200:
+                return "YES" in resp.json()["response"].strip().upper()
+        except:
+            return False
+        return False
             
     if best_row is not None and best_score >= 0.70:
-        return best_row["nitemcode"]
+        if validate_with_llm(itemdesc, best_row["sku"]):
+            return best_row["sku"]  # or a richer string
+        # return best_row["nitemcode"]
+        return f"{best_row['company']} | {best_row['brand']} | {best_row['sku']}"
     return ""
 
 # Apply fallback suggestion

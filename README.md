@@ -1,25 +1,32 @@
 # Stock Keeping Unit
 
-![Static Badge](https://img.shields.io/badge/Version_4-Developing_wrt_New_Format-yellow)
+![Static Badge](https://img.shields.io/badge/Version_4-Developing_WRT_New_Format-FFFF99)
 
 ## 🎯 Objective
 
 > This project aims to intelligently match and synchronize data between two CSV files:
 **master.csv** and **transaction.csv**.
 
-The **Version 4** is developed in accordance wrt to the new format provided by the Client. The Data Preprocessing logic has been changed. The changes can be seen in `DataPreprocessing.ipynb` in the section `Working with Nepal Data`.
+The **Version 4** is being developed wrt to the new format provided by the Client. The Data Preprocessing logic has been changed. The changes can be seen in `DataPreprocessing.ipynb` in the section `Working with Nepal Data`.
 
-The Suggestion part and the LLM part is yet to be integrated with this version.
+- Clarifications regarding the new format which does not have the `ItemDesc` present in the master table has to be communicated with the Client.
+- The `Suggestions` and the `LLM` parts are yet to be integrated and tested with this version.
 
 <br>
 
 ## 🔁 Input & Output
 
-- Input Files       *previously processed data in* `DataPreprocessing.ipynb`
+- Input Files 
+<br><span style="display:inline-block; margin-top:20px; margin-bottom:0px; margin-right:0px;"></span>*for* **`DataPreprocessing.ipynb`**
+    * `Data/DataCleaned/master_cleaned.csv`
+    * `Data/DataCleaned/transaction_cleaned.csv`
+<br><span style="display:inline-block; margin-top:-15px; margin-bottom:40px; margin-right:-40px;"></span>
+*for* **`main.ipynb`**
     * `Data/master.csv`
     * `Data/transaction.csv`
+
 - Output Files
-    * `matches_sequence.csv` – Full results with match status and error reasons.
+    * `matches.csv` – Full results with match status and error reasons.
 
 <br>
 
