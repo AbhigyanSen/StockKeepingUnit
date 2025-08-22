@@ -6,7 +6,7 @@ import os
 BASE_DIR = r"D:\Projects\SKU\StockKeepingUnit\Data\DataCleaned"
 
 master = pd.read_csv(os.path.join(BASE_DIR, "master_cleaned.csv")).fillna("")
-transactions = pd.read_csv(os.path.join(BASE_DIR, "CleanedTransactions", "oct-24.csv")).fillna("")
+transactions = pd.read_csv(os.path.join(BASE_DIR, "transaction_cleaned1.csv")).fillna("")
 
 # ---------- Utility: Parse packsize ----------
 def parse_packsize(val):
@@ -85,44 +85,53 @@ def score_and_rank_matches(transaction_row, potential_matches):
 # ---------- Matching Logic ----------
 results = []
 for t_idx, t_row in transactions.iterrows():
+    print("="*80)
     print(f"🔄 Processing Transaction Row {t_idx+1}: {t_row['ITEMDESC']}")
+    print("-"*80)
 
     # Step 1: CATEGORY
     A = master[master["catcode"].astype(str).str.strip().str.upper() == str(t_row["CATEGORY"]).strip().upper()]
+    print(f"Step 1: CATEGORY filter -> kept {len(A)}, filtered out {len(master) - len(A)}")
     if A.empty:
+        print("❌ No CATEGORY match. Filtered out rows:")
+        print(master[~master.index.isin(A.index)])
         results.append(list(t_row) + [""] * len(master.columns) + ["CATCODE"] + [""])
         continue
 
     # Step 2: MANUFACTURE
     B = A[A["company"].astype(str).str.strip().str.upper() == str(t_row["MANUFACTURE"]).strip().upper()]
+    print(f"Step 2: MANUFACTURE filter -> kept {len(B)}, filtered out {len(A) - len(B)}")
     if B.empty:
+        print("❌ No MANUFACTURE match. Filtered out rows:")
+        print(A[~A.index.isin(B.index)])
         results.append(list(t_row) + [""] * len(master.columns) + ["MANUFACTURE"] + [""])
         continue
 
-    # Step 3: BRAND (prefer exact match, else fuzzy substring match)
+    # Step 3: BRAND
     brand_upper = str(t_row["BRAND"]).strip().upper()
     C = B[B["brand"].astype(str).str.strip().str.upper() == brand_upper]  # exact match
-
     if C.empty:
-        # fuzzy: check if transaction brand is substring of master brand OR vice versa
         C = B[B["brand"].astype(str).str.strip().str.upper().apply(
             lambda mb: brand_upper in mb or mb in brand_upper
         )]
+    print(f"Step 3: BRAND filter -> kept {len(C)}, filtered out {len(B) - len(C)}")
+    if C.empty:
+        print("❌ No BRAND match. Filtered out rows:")
+        print(B[~B.index.isin(C.index)])
 
     # If Brand matches (exact or fuzzy), proceed with Packtype and Packsize
     if not C.empty:
         D = C[C["packtype"].astype(str).str.strip().str.upper() == str(t_row["PACKTYPE"]).strip().upper()]
+        print(f"Step 4: PACKTYPE filter -> kept {len(D)}, filtered out {len(C) - len(D)}")
         if not D.empty:
             t_qty, t_uom = parse_packsize(t_row["PACKSIZE"])
-            
-            # Use float comparison for quantities
             # E = D[
             #     (D["qty"].astype(float) == float(t_qty)) & 
             #     (D["uom"].astype(str).str.strip().str.upper() == t_uom)
             # ]
             E = D[D["qty"].astype(float) == float(t_qty)]
-            
-            # Found potential matches, score them and pick the best one
+            print(f"Step 5: PACKSIZE filter -> kept {len(E)}, filtered out {len(D) - len(E)}")
+
             if not E.empty:
                 best_match = score_and_rank_matches(t_row, E)
                 if best_match is not None:
@@ -130,12 +139,15 @@ for t_idx, t_row in transactions.iterrows():
                     results.append(list(t_row) + list(best_match.drop(drop_cols)) + [""] + [best_match['score']])
                     continue
     
-    # If any of the above steps failed, fall back to the original logic to find the error reason
-    # We use a separate set of variables to avoid conflicts with the successful matching path
-    
+    # ---------- Fallback ----------
+    print("⚠️ Entering Fallback Matching...")
+
     # Fallback Step 3.1: PACKTYPE
     D_fallback = B[B["packtype"].astype(str).str.strip().str.upper() == str(t_row["PACKTYPE"]).strip().upper()]
+    print(f"Fallback PACKTYPE filter -> kept {len(D_fallback)}, filtered out {len(B) - len(D_fallback)}")
     if D_fallback.empty:
+        print("❌ No PACKTYPE match. Filtered out rows:")
+        print(B[~B.index.isin(D_fallback.index)])
         results.append(list(t_row) + [""] * len(master.columns) + ["PACKTYPE"] + [""])
         continue
 
@@ -146,7 +158,10 @@ for t_idx, t_row in transactions.iterrows():
     #     (D_fallback["uom"].astype(str).str.strip().str.upper() == t_uom_f)
     # ]
     E_fallback = D_fallback[D_fallback["qty"].astype(float) == float(t_qty_f)]
+    print(f"Fallback PACKSIZE filter -> kept {len(E_fallback)}, filtered out {len(D_fallback) - len(E_fallback)}")
     if E_fallback.empty:
+        print("❌ No PACKSIZE match. Filtered out rows:")
+        print(D_fallback[~D_fallback.index.isin(E_fallback.index)])
         results.append(list(t_row) + [""] * len(master.columns) + ["PACKSIZE"] + [""])
         continue
 
@@ -156,10 +171,11 @@ for t_idx, t_row in transactions.iterrows():
         drop_cols = [c for c in ["concat_str", "score", "itemdesc_score", "brand_score"] if c in best_match_fallback.index]
         results.append(list(t_row) + list(best_match_fallback.drop(drop_cols)) + [""] + [best_match_fallback['score']])
     else:
+        print("❌ ITEMDESC did not match any rows")
         results.append(list(t_row) + [""] * len(master.columns) + ["ITEMDESC"] + [""])
-
+        
 # ---------- Save Results ----------
 columns = list(transactions.columns) + list(master.columns) + ["ERROR"] + ["SCORE"]
 results_df = pd.DataFrame(results, columns=columns)
-results_df.to_csv("matches_oct-24.csv", index=False)
-print("✅ Matching complete. Results saved to matches_oct-24.csv.")
+results_df.to_csv("demo_matches.csv", index=False)
+print("✅ Matching complete. Results saved to demo_matches.csv.")

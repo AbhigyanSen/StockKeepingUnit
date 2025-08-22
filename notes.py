@@ -14,9 +14,5 @@ Now, suppose that one row of transaction matches with multiple rows of the maste
     Row 1           Row 1
     Row 1           Row 2
     Row 1           Row 3..
-    
-I do not want to handle the ITEMDESC part and LLM part right now, hence u can also ignore those. give me the code with these changes
-
-
 
 6. now select 'ITEMDESC' drom transaction, match it with the concatenated string of 'company', 'brand', 'packtype' and 'qty' of the master of E. if match then store those rows of master (F). if no match then ERROR in the matches.csv will be ITEMDESC and exit.
