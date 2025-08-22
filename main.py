@@ -1,180 +1,130 @@
 import pandas as pd
-import requests
 import re
-import time
-from difflib import SequenceMatcher
+import os
 
 # ---------- Load Data ----------
-master = pd.read_csv("/home/dcsadmin/Documents/del_SKU/StockKeepingUnit/Data/DataCleaned/master_cleaned.csv").fillna("")
-transactions = pd.read_csv("/home/dcsadmin/Documents/del_SKU/StockKeepingUnit/Data/DataCleaned/transaction_cleaned.csv").fillna("")
+BASE_DIR = r"D:\Projects\SKU\StockKeepingUnit\Data\DataCleaned"
 
-# ---------- Config ----------
-PACKTYPE_EQUIVALENCE = {
-    "CDB": ["CDB", "CDBOX"],
-    "HL": ["HL", "HARDLINE", "HL PACK"]  # extend as needed
-}
+master = pd.read_csv(os.path.join(BASE_DIR, "master_cleaned.csv")).fillna("")
+transactions = pd.read_csv(os.path.join(BASE_DIR, "transaction_cleaned.csv")).fillna("")
 
-# ---------- Scoring Mechanism ----------
-MATCH_WEIGHTS = {
-    "manufacture": 0.4,
-    "brand": 0.3,
-    "category": 0.1,
-    "packsize": 0.1,
-    "packtype": 0.1
-}
+# ---------- Utility: Parse packsize ----------
+def parse_packsize(val):
+    """
+    Splits packsize like '180 ML', '250ML', '20' → (qty, uom)
+    qty: str
+    uom: str
+    """
+    if not isinstance(val, str):
+        val = str(val)
+    val = val.strip().upper()
 
-MATCH_THRESHOLD = 0.75  # below this → fallback to LLM
+    # Separate numbers and alphabets
+    m = re.match(r"(\d+)\s*([A-Z]*)", val)
+    if m:
+        qty = m.group(1)
+        uom = m.group(2) if m.group(2) else ""
+        return qty, uom
+    return val, ""
 
-
-# ---------- Utilities ----------
-def extract_product_name_ollama(description, model="mistral"):
-    prompt = (
-        f"Extract only the product name from the following description. "
-        f"Do not include quantity, unit, or pack type:\n\n{description}\n\nProduct name:"
+# ---------- Utility: Step 6 (ITEMDESC matching) ----------
+def match_itemdesc(E, t_itemdesc):
+    """
+    Matches ITEMDESC from transaction against concatenated string:
+    company + brand + packtype + qty
+    """
+    E = E.copy()
+    E["concat_str"] = (
+        E["company"].astype(str).str.strip().str.upper() + " " +
+        E["brand"].astype(str).str.strip().str.upper() + " " +
+        E["packtype"].astype(str).str.strip().str.upper() + " " +
+        E["qty"].astype(str).str.strip().str.upper()
     )
-    try:
-        response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={"model": model, "prompt": prompt, "stream": False},
-        )
-        if response.status_code == 200:
-            raw = response.json()["response"].strip()
-            cleaned = re.sub(r"\(.*?\)", "", raw).strip()
-            return cleaned
-        else:
-            return f"Error: {response.text}"
-    except Exception as e:
-        return f"Error: {str(e)}"
+    F = E[E["concat_str"] == str(t_itemdesc).strip().upper()]
+    return F
 
-
-def similar_str(a, b):
-    if not isinstance(a, str) or not isinstance(b, str):
-        return 0.0
-    return SequenceMatcher(None, a.strip().lower(), b.strip().lower()).ratio()
-
-
-def packsize_match(p1, p2):
-    return re.sub(r"\.0+", "", str(p1).replace(" ", "").upper()) == re.sub(
-        r"\.0+", "", str(p2).replace(" ", "").upper()
-    )
-
-
-def score_row(master_row, trans_row):
-    """Score a master row against transaction row"""
-    score = 0
-
-    # Manufacture
-    score += MATCH_WEIGHTS["manufacture"] * similar_str(
-        master_row["company"], trans_row["manufacture"]
-    )
-
-    # Brand
-    score += MATCH_WEIGHTS["brand"] * similar_str(
-        master_row["brand"], trans_row["brand"]
-    )
-
-    # Category
-    score += (
-        MATCH_WEIGHTS["category"]
-        if str(master_row["catcode"]).strip().upper()
-        == str(trans_row["category"]).strip().upper()
-        else 0
-    )
-
-    # Packsize
-    score += (
-        MATCH_WEIGHTS["packsize"]
-        if packsize_match(master_row["qty"], trans_row["packsize"])
-        else 0
-    )
-
-    # Packtype
-    match_packtypes = PACKTYPE_EQUIVALENCE.get(
-        trans_row["packtype"], [trans_row["packtype"]]
-    )
-    score += (
-        MATCH_WEIGHTS["packtype"]
-        if str(master_row["packtype"]).upper() in [s.upper() for s in match_packtypes]
-        else 0
-    )
-
-    return score
-
-
-# ---------- Main Processing ----------
+# ---------- Matching Logic ----------
 results = []
 
-for idx, row in transactions.iterrows():
-    trans_vals = {
-        "manufacture": str(row["MANUFACTURE"]).strip(),
-        "brand": str(row["BRAND"]).strip(),
-        "category": str(row["CATEGORY"]).strip(),
-        "itemdesc": str(row["ITEMDESC"]).strip(),
-        "qty": row.get("qty", ""),
-        "uomdesc": row.get("uomdesc", ""),
-        "packsize": str(row["PACKSIZE"]).strip(),
-        "packtype": str(row["PACKTYPE"]).strip(),
-    }
+for t_idx, t_row in transactions.iterrows():
+    print(f"🔄 Processing Transaction Row {t_idx+1}: {t_row['ITEMDESC']}")
 
-    # Score every master row
-    match_scores = []
-    for _, m_row in master.iterrows():
-        s = score_row(m_row, trans_vals)
-        match_scores.append((s, m_row))
+    # Step 1: CATEGORY
+    A = master[master["catcode"].astype(str).str.strip().str.upper() ==
+               str(t_row["CATEGORY"]).strip().upper()]
+    if A.empty:
+        results.append(list(t_row) + [""] * len(master.columns) + ["CATCODE"])
+        continue
 
-    # Sort by score
-    match_scores = sorted(match_scores, key=lambda x: x[0], reverse=True)
+    # Step 2: MANUFACTURE
+    B = A[A["company"].astype(str).str.strip().str.upper() ==
+           str(t_row["MANUFACTURE"]).strip().upper()]
+    if B.empty:
+        results.append(list(t_row) + [""] * len(master.columns) + ["MANUFACTURE"])
+        continue
 
-    if match_scores and match_scores[0][0] >= MATCH_THRESHOLD:
-        # ✅ High confidence match
-        best = match_scores[0][1]
-        results.append(list(row) + [0, match_scores[0][0]] + list(best[master.columns]) + ["", ""])
-    else:
-        # ❌ Use LLM as fallback
-        product_name = extract_product_name_ollama(trans_vals["itemdesc"])
-        time.sleep(1)
-        if product_name.startswith("Error:"):
-            results.append(
-                list(row)
-                + [1, 0.0]
-                + [""] * len(master.columns)
-                + ["ITEMDESC", product_name]
-            )
+    # Step 3: BRAND
+    C = B[B["brand"].astype(str).str.strip().str.upper() ==
+          str(t_row["BRAND"]).strip().upper()]
+
+    if C.empty:
+        # Step 3.1: PACKTYPE
+        D = B[B["packtype"].astype(str).str.strip().str.upper() ==
+               str(t_row["PACKTYPE"]).strip().upper()]
+        if D.empty:
+            results.append(list(t_row) + [""] * len(master.columns) + ["PACKTYPE"])
             continue
 
-        # Compare with master using LLM-extracted product names
-        llm_scores = []
-        for _, m_row in master.iterrows():
-            master_name = extract_product_name_ollama(m_row["sku"])
-            time.sleep(1)
-            score = similar_str(product_name, master_name)
-            llm_scores.append((score, m_row, master_name))
-
-        llm_scores = sorted(llm_scores, key=lambda x: x[0], reverse=True)
-
-        if llm_scores and llm_scores[0][0] >= 0.75:
-            best = llm_scores[0][1]
-            results.append(
-                list(row)
-                + [0, llm_scores[0][0]]
-                + list(best[master.columns])
-                + ["", llm_scores[0][2]]
-            )
+        # Step 3.2: PACKSIZE
+        t_qty, t_uom = parse_packsize(t_row["PACKSIZE"])
+        if t_uom == "":
+            E = D[D["qty"].astype(str).str.replace(".0", "", regex=False) == t_qty]
         else:
-            results.append(
-                list(row)
-                + [2, 0.0]
-                + [""] * len(master.columns)
-                + ["ITEMDESC", product_name]
-            )
+            E = D[(D["qty"].astype(str).str.replace(".0", "", regex=False) == t_qty) &
+                  (D["uom"].astype(str).str.strip().str.upper() == t_uom)]
 
-# ---------- Save ----------
-columns = (
-    list(transactions.columns)
-    + ["MATCHED", "MATCH_SCORE"]
-    + list(master.columns)
-    + ["ERROR", "ProductName"]
-)
+        if E.empty:
+            results.append(list(t_row) + [""] * len(master.columns) + ["PACKSIZE"])
+            continue
+
+        # Step 6: ITEMDESC
+        F = match_itemdesc(E, t_row["ITEMDESC"])
+        if F.empty:
+            results.append(list(t_row) + [""] * len(master.columns) + ["ITEMDESC"])
+            continue
+
+        # Matches found
+        for _, m_row in F.iterrows():
+            results.append(list(t_row) + list(m_row.drop("concat_str")) + [""])
+        continue
+
+    # Step 4: PACKTYPE
+    D = C[C["packtype"].astype(str).str.strip().str.upper() ==
+           str(t_row["PACKTYPE"]).strip().upper()]
+    if D.empty:
+        results.append(list(t_row) + [""] * len(master.columns) + ["PACKTYPE"])
+        continue
+
+    # Step 5: PACKSIZE
+    t_qty, t_uom = parse_packsize(t_row["PACKSIZE"])
+    E = D[(D["qty"].astype(str).str.replace(".0", "", regex=False) == t_qty) &
+          (D["uom"].astype(str).str.strip().str.upper() == t_uom)]
+    if E.empty:
+        results.append(list(t_row) + [""] * len(master.columns) + ["PACKSIZE"])
+        continue
+
+    # Step 6: ITEMDESC
+    F = match_itemdesc(E, t_row["ITEMDESC"])
+    if F.empty:
+        results.append(list(t_row) + [""] * len(master.columns) + ["ITEMDESC"])
+        continue
+
+    # Matches found
+    for _, m_row in F.iterrows():
+        results.append(list(t_row) + list(m_row.drop("concat_str")) + [""])
+
+# ---------- Save Results ----------
+columns = list(transactions.columns) + list(master.columns) + ["ERROR"]
 results_df = pd.DataFrame(results, columns=columns)
 results_df.to_csv("matches.csv", index=False)
 print("✅ Matching complete. Results saved to matches.csv.")
