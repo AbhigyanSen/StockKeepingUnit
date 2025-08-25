@@ -2,67 +2,89 @@ import pandas as pd
 import re
 import os
 
-# ---------- Load Data ----------
-BASE_DIR = r"D:\Projects\SKU\StockKeepingUnit\Data\DataCleaned"
+# ---------- File Paths ----------
+BASE_DIR = r"D:\Projects\SKU\StockKeepingUnit\Data"
 
-master = pd.read_csv(os.path.join(BASE_DIR, "master_cleaned.csv")).fillna("")
-transactions = pd.read_csv(os.path.join(BASE_DIR, "CleanedTransactions", "oct-24.csv")).fillna("")
+# take only filename (after DataCSV)
+transaction_filename = "trans_sep-22.csv"                                       # CHANGE when switching files
+transaction_path = os.path.join(BASE_DIR, "DataCSV", transaction_filename)
 
-# ---------- Utility: Parse packsize ----------
+# output folder inside Data
+output_dir = os.path.join(BASE_DIR, "output")
+os.makedirs(output_dir, exist_ok=True)
+
+# auto-generate output filename (trans_xxx.csv → matches_xxx.csv)
+if transaction_filename.lower().startswith("trans_"):
+    output_filename = transaction_filename.replace("trans_", "matches_", 1)
+else:
+    output_filename = "matches_" + transaction_filename
+
+output_path = os.path.join(output_dir, output_filename)
+
+master_path = os.path.join(BASE_DIR, "DataCSV", "master.csv")
+
+print("📂 Master:", master_path)
+print("📂 Transaction:", transaction_path)
+print("📂 Output:", output_path)
+print("")
+
+# ---------- Load Original Data ----------
+master_orig = pd.read_csv(master_path).fillna("")
+transaction_orig = pd.read_csv(transaction_path).fillna("")
+
+# ---------- Define Columns to Drop ----------
+master_colToDrop = [
+    'itemcode', 'category', 'subcat', 'ssubcat', 'mbrand', 'multipack',
+    'flavor', 'color', 'hpkcnv', 'msu', 'launchdate', 'status',
+    'factcode', 'activeitem', 'active', 'nepalcomm', 'flag',
+    'audittype', 'price_seg', 'filter_seg', 'DELYM'
+]
+transaction_colToDrop = [
+    'DATE', 'PERIOD', 'AUDITYPE', 'STORECODE', 'DLRCODE', 'ITEMCODE',
+    'NEW_CODES', 'COMMENTS', 'IMAGE', 'CODE COMMENT', 'FLAG'
+]
+
+# ---------- Cleaned Copies for Matching ----------
+master = master_orig.drop(columns=[c for c in master_colToDrop if c in master_orig.columns])
+transaction = transaction_orig.drop(columns=[c for c in transaction_colToDrop if c in transaction_orig.columns])
+
+# ---------- Utility: Parse Packsize ----------
 def parse_packsize(val):
-    """
-    Splits packsize like '180 ML', '250ML', '20' → (qty, uom)
-    qty: str
-    uom: str
-    """
     if not isinstance(val, str):
         val = str(val)
     val = val.strip().upper()
-
-    # Handle cases with just a number
     if val.isdigit():
         return val, ""
-
-    # Separate numbers and alphabets
     m = re.match(r"(\d+)\s*([A-Z]*)", val)
     if m:
-        qty = m.group(1)
-        uom = m.group(2) if m.group(2) else ""
-        return qty, uom
+        return m.group(1), m.group(2) if m.group(2) else ""
     return val, ""
 
-# ---------- Utility: Scoring and Matching ----------
+# ---------- Utility: Scoring ----------
 def score_and_rank_matches(transaction_row, potential_matches):
-    """
-    Calculates a score for each potential match and returns the best one.
-    """
     if potential_matches.empty:
         return None
 
     potential_matches = potential_matches.copy()
-    
-    # Initialize score column
     potential_matches['score'] = 0.0
 
-    # Score based on MRP
+    # MRP
     mrp_match = (potential_matches['mrp'].astype(str) == str(transaction_row['MRP']))
-    potential_matches.loc[mrp_match, 'score'] += 10.0  # High score for MRP match
+    potential_matches.loc[mrp_match, 'score'] += 10.0
 
-    # Score based on BRAND (exact vs fuzzy)
+    # BRAND
     t_brand = str(transaction_row['BRAND']).strip().upper()
     def brand_score(master_brand):
         mb = str(master_brand).strip().upper()
         if mb == t_brand:
-            return 5.0  # exact match
+            return 5.0
         elif t_brand in mb or mb in t_brand:
-            return 3.0  # fuzzy substring match
-        else:
-            return 0.0
-
+            return 3.0
+        return 0.0
     potential_matches['brand_score'] = potential_matches['brand'].apply(brand_score)
     potential_matches['score'] += potential_matches['brand_score']
 
-    # Score based on ITEMDESC similarity
+    # ITEMDESC similarity
     t_words = set(re.sub(r'[^A-Z0-9\s]', '', str(transaction_row['ITEMDESC']).strip().upper()).split())
     if t_words:
         potential_matches["concat_str"] = (
@@ -71,95 +93,73 @@ def score_and_rank_matches(transaction_row, potential_matches):
             potential_matches["packtype"].astype(str).str.strip().str.upper() + " " +
             potential_matches["qty"].astype(str).str.strip().str.replace(".0", "", regex=False)
         )
-        
         potential_matches['itemdesc_score'] = potential_matches.apply(
             lambda row: len(t_words.intersection(set(str(row['concat_str']).split()))) / len(t_words),
             axis=1
         )
         potential_matches['score'] += potential_matches['itemdesc_score'] * 10
 
-    # Return the row with the highest score
-    best_match = potential_matches.sort_values(by='score', ascending=False).iloc[0]
-    return best_match
+    return potential_matches.sort_values(by='score', ascending=False).iloc[0]
 
-# ---------- Matching Logic ----------
+# ---------- Matching ----------
 results = []
-for t_idx, t_row in transactions.iterrows():
+for t_idx, t_row in transaction.iterrows():
     print(f"🔄 Processing Transaction Row {t_idx+1}: {t_row['ITEMDESC']}")
-
-    # Step 1: CATEGORY
-    A = master[master["catcode"].astype(str).str.strip().str.upper() == str(t_row["CATEGORY"]).strip().upper()]
+    t_orig_row = transaction_orig.iloc[t_idx]   # get original transaction row
+    
+    A = master[master["catcode"].astype(str).str.upper() == str(t_row["CATEGORY"]).upper()]
     if A.empty:
-        results.append(list(t_row) + [""] * len(master.columns) + ["CATCODE"] + [""])
+        results.append(list(t_orig_row) + [""] * len(master_orig.columns) + ["CATCODE", ""])
         continue
 
-    # Step 2: MANUFACTURE
-    B = A[A["company"].astype(str).str.strip().str.upper() == str(t_row["MANUFACTURE"]).strip().upper()]
+    B = A[A["company"].astype(str).str.upper() == str(t_row["MANUFACTURE"]).upper()]
     if B.empty:
-        results.append(list(t_row) + [""] * len(master.columns) + ["MANUFACTURE"] + [""])
+        results.append(list(t_orig_row) + [""] * len(master_orig.columns) + ["MANUFACTURE", ""])
         continue
 
-    # Step 3: BRAND (prefer exact match, else fuzzy substring match)
-    brand_upper = str(t_row["BRAND"]).strip().upper()
-    C = B[B["brand"].astype(str).str.strip().str.upper() == brand_upper]  # exact match
-
+    brand_upper = str(t_row["BRAND"]).upper()
+    C = B[B["brand"].astype(str).str.upper() == brand_upper]
     if C.empty:
-        # fuzzy: check if transaction brand is substring of master brand OR vice versa
-        C = B[B["brand"].astype(str).str.strip().str.upper().apply(
+        C = B[B["brand"].astype(str).str.upper().apply(
             lambda mb: brand_upper in mb or mb in brand_upper
         )]
 
-    # If Brand matches (exact or fuzzy), proceed with Packtype and Packsize
     if not C.empty:
-        D = C[C["packtype"].astype(str).str.strip().str.upper() == str(t_row["PACKTYPE"]).strip().upper()]
+        D = C[C["packtype"].astype(str).str.upper() == str(t_row["PACKTYPE"]).upper()]
         if not D.empty:
             t_qty, t_uom = parse_packsize(t_row["PACKSIZE"])
-            
-            # Use float comparison for quantities
-            # E = D[
-            #     (D["qty"].astype(float) == float(t_qty)) & 
-            #     (D["uom"].astype(str).str.strip().str.upper() == t_uom)
-            # ]
             E = D[D["qty"].astype(float) == float(t_qty)]
-            
-            # Found potential matches, score them and pick the best one
             if not E.empty:
                 best_match = score_and_rank_matches(t_row, E)
                 if best_match is not None:
-                    drop_cols = [c for c in ["concat_str", "score", "itemdesc_score", "brand_score"] if c in best_match.index]
-                    results.append(list(t_row) + list(best_match.drop(drop_cols)) + [""] + [best_match['score']])
+                    m_idx = best_match.name
+                    m_orig_row = master_orig.iloc[m_idx]   # original master row
+                    results.append(list(t_orig_row) + list(m_orig_row) + ["", best_match['score']])
                     continue
-    
-    # If any of the above steps failed, fall back to the original logic to find the error reason
-    # We use a separate set of variables to avoid conflicts with the successful matching path
-    
-    # Fallback Step 3.1: PACKTYPE
-    D_fallback = B[B["packtype"].astype(str).str.strip().str.upper() == str(t_row["PACKTYPE"]).strip().upper()]
+
+    # Fallback
+    D_fallback = B[B["packtype"].astype(str).str.upper() == str(t_row["PACKTYPE"]).upper()]
     if D_fallback.empty:
-        results.append(list(t_row) + [""] * len(master.columns) + ["PACKTYPE"] + [""])
+        results.append(list(t_orig_row) + [""] * len(master_orig.columns) + ["PACKTYPE", ""])
         continue
 
-    # Fallback Step 3.2: PACKSIZE
     t_qty_f, t_uom_f = parse_packsize(t_row["PACKSIZE"])
-    # E_fallback = D_fallback[
-    #     (D_fallback["qty"].astype(float) == float(t_qty_f)) & 
-    #     (D_fallback["uom"].astype(str).str.strip().str.upper() == t_uom_f)
-    # ]
     E_fallback = D_fallback[D_fallback["qty"].astype(float) == float(t_qty_f)]
     if E_fallback.empty:
-        results.append(list(t_row) + [""] * len(master.columns) + ["PACKSIZE"] + [""])
+        results.append(list(t_orig_row) + [""] * len(master_orig.columns) + ["PACKSIZE", ""])
         continue
 
-    # Fallback Step 6: ITEMDESC
     best_match_fallback = score_and_rank_matches(t_row, E_fallback)
     if best_match_fallback is not None and best_match_fallback['score'] > 0:
-        drop_cols = [c for c in ["concat_str", "score", "itemdesc_score", "brand_score"] if c in best_match_fallback.index]
-        results.append(list(t_row) + list(best_match_fallback.drop(drop_cols)) + [""] + [best_match_fallback['score']])
+        m_idx = best_match_fallback.name
+        m_orig_row = master_orig.iloc[m_idx]
+        results.append(list(t_orig_row) + list(m_orig_row) + ["", best_match_fallback['score']])
     else:
-        results.append(list(t_row) + [""] * len(master.columns) + ["ITEMDESC"] + [""])
+        results.append(list(t_orig_row) + [""] * len(master_orig.columns) + ["ITEMDESC", ""])
 
 # ---------- Save Results ----------
-columns = list(transactions.columns) + list(master.columns) + ["ERROR"] + ["SCORE"]
+columns = list(transaction_orig.columns) + list(master_orig.columns) + ["ERROR", "SCORE"]
 results_df = pd.DataFrame(results, columns=columns)
-results_df.to_csv("matches_oct-24.csv", index=False)
-print("✅ Matching complete. Results saved to matches_oct-24.csv.")
+results_df.to_csv(output_path, index=False, encoding="utf-8-sig")
+
+print(f"\n✅ Matching complete. Results saved to {output_path}")
