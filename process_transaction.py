@@ -9,7 +9,7 @@ import re
 
 # ----------------- CONFIG -----------------
 MODEL_NAME = "nomic-embed-text"
-TRANSACTION_FILE = 'Data/DataCSV/transaction/oct-24.csv'
+TRANSACTION_FILE = 'Data/DataCSV/transaction/nov-22.csv'
 
 # Ensure required directories exist
 os.makedirs("output", exist_ok=True)

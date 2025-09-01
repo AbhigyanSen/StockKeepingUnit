@@ -57,10 +57,17 @@ for text in tqdm(texts, desc="Fetching Embeddings"):
     if emb is not None:
         embeddings.append(emb)
     else:
-        embeddings.append(np.zeros(1536, dtype=np.float32))  # fallback, adjust dim if model differs
+        # embeddings.append(np.zeros(1536, dtype=np.float32))  # fallback, adjust dim if model differs
+        fallback_dim = embeddings[0].shape[0] if embeddings else 1
+        embeddings.append(np.zeros(fallback_dim, dtype=np.float32))
 
-# Convert embeddings to numpy array
-embeddings_np = np.vstack(embeddings).astype('float32')
+embedding_dim = embeddings[0].shape[0]
+embeddings_np = np.vstack([emb if emb.shape[0] == embedding_dim else np.zeros(embedding_dim, dtype=np.float32) 
+                           for emb in embeddings]).astype('float32')
+    
+
+# # Convert embeddings to numpy array
+# embeddings_np = np.vstack(embeddings).astype('float32')
 
 # ----------------- BUILD FAISS CPU INDEX -----------------
 embedding_dim = embeddings_np.shape[1]

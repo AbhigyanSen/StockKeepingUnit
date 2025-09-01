@@ -49,14 +49,25 @@ else:
     row.to_csv(eval_file, index=False)
 
 # ---- Save mismatched rows ----
-# A mismatch is when no rank matches the new code
-mismatches = pivoted[
-    (pivoted["t_NEW_CODES"] != pivoted["rank_1"]) &
-    (pivoted["t_NEW_CODES"] != pivoted["rank_2"]) &
-    (pivoted["t_NEW_CODES"] != pivoted["rank_3"])
-]
+# For each group, determine match rank (if any)
+def flag_group(group):
+    tcode = group["t_NEW_CODES"].iloc[0]
+    matches = group.loc[group["matched_itemcode"] == tcode, "rank"]
+    if matches.empty:
+        flag_val = 4
+    else:
+        flag_val = matches.min()  # first rank that matched
+    group = group.copy()
+    group["FLAG"] = flag_val
+    return group
+
+mismatches = df.groupby("t_NEW_CODES", group_keys=False).apply(flag_group)
+
+# Keep only those groups where FLAG != 1 (i.e., not a perfect rank-1 match)
+mismatches = mismatches[mismatches["FLAG"] != 1]
 
 mismatch_file = f"Evaluation/eval_{filename}.csv"
+os.makedirs("Evaluation", exist_ok=True)
 mismatches.to_csv(mismatch_file, index=False)
 
 print(f"Results saved in {eval_file}")
