@@ -13,6 +13,7 @@ TRANSACTION_FOLDER = 'Demo'   # <-- give folder path here
 
 # Ensure required directories exist
 os.makedirs("output", exist_ok=True)
+os.makedirs("FinalMatches", exist_ok=True)
 
 # Files from master step
 FAISS_INDEX_FILE = "./temp/master_index.faiss"
@@ -51,7 +52,7 @@ def extract_numeric(val):
 def process_transaction_file(file_path):
     input_filename = os.path.splitext(os.path.basename(file_path))[0]
     OUTPUT_CSV = f"./output/matches_{input_filename}.csv"
-    FINAL_OUTPUT_CSV = f"./output/final_matches_{input_filename}.csv"
+    FINAL_OUTPUT_CSV = f"./FinalMatches/final_matches_{input_filename}.csv"
 
     print(f"\n|INFO| Processing file: {file_path}")
     transaction = pd.read_csv(file_path)
