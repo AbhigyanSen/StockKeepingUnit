@@ -5,13 +5,13 @@
 ## 🎯 Objective
 
 > This project implements a **scalable SKU matching pipeline** by combining **embeddings**, **FAISS similarity search**, **structured filtering**, and **LLM re-validation**.
-<br>
-> <br> The pipeline matches **transaction SKUs** against a **master catalog** to handle messy product descriptions, pack-size variations, and partial matches.
 
-<br>
+> The pipeline matches **transaction SKUs** against a **master catalog** to handle messy product descriptions, pack-size variations, and partial matches.
+
 
 **Version 5.3** introduces a major upgrade: it replaces rule-based/LLM-first matching with a **vector database + retrieval system** (FAISS). It embeds all master SKUs, performs top-k retrieval for each transaction SKU, applies structured filtering, and outputs formatted match reports. Finally, a local **Mistral LLM** can be used for validation and exact match accuracy scoring.
 
+<br>
 
 ## 🆕 Key Features
 
@@ -23,6 +23,7 @@
 - **LLM Re-validation:** Uses Mistral (via Ollama) for semantic verification of candidate matches.
 - **Multi-stage Results:** Raw matches → filtered top-3 matches → formatted outputs → LLM exact match accuracy.
 
+<br>
 
 ## 🔁 Input & Output
 
@@ -89,7 +90,10 @@ StockKeepingUnit/
 └── transaction_formatting.py                           # Handles 3 re-iterations for the 3 transaction rows
 ```
 
+<br>
+
 ## 🚀 How It Works
+<br>
 
 📌 `master.py`
 
@@ -145,6 +149,7 @@ StockKeepingUnit/
 
 > Note: Mistral model size is ~4GB and requires enough RAM (~8GB+ recommended).
 
+<br>
 
 ## ▶️ Run the Code
 
@@ -207,6 +212,7 @@ python 3.py
 |**False Positive (FP)**| Incorrect Match| 108| 10.40%|
 || **Total**| 1038| 100%| -->
 
+<br>
 
 ## 📌 Notes
 - FAISS similarity is **L2 distance**; lower distance = better match.
