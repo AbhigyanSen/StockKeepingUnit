@@ -11,11 +11,11 @@ MODEL_NAME = "nomic-embed-text"
 MASTER_FILE = 'Data/DataCSV/master.csv'
 
 # Ensure required directories exist
-os.makedirs("temp", exist_ok=True)
+os.makedirs("datastore", exist_ok=True)
 
 # Output files
-FAISS_INDEX_FILE = "./temp/master_index.faiss"
-METADATA_FILE = "./temp/metadata.json"
+FAISS_INDEX_FILE = "./datastore/master_index.faiss"
+METADATA_FILE = "./datastore/metadata.json"
 
 # Master columns
 m_columns = ['itemcode', 'catcode', 'company', 'mbrand', 'brand', 'sku',

@@ -16,8 +16,8 @@ os.makedirs("output", exist_ok=True)
 os.makedirs("FinalMatches", exist_ok=True)
 
 # Files from master step
-FAISS_INDEX_FILE = "./temp/master_index.faiss"
-METADATA_FILE = "./temp/metadata.json"
+FAISS_INDEX_FILE = "./datastore/master_index.faiss"
+METADATA_FILE = "./datastore/metadata.json"
 
 # Column definitions
 m_columns = ['itemcode', 'catcode', 'company', 'mbrand', 'brand', 'sku',
