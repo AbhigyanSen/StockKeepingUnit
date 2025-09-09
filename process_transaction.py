@@ -9,14 +9,14 @@ import re
 
 # ----------------- CONFIG -----------------
 MODEL_NAME = "nomic-embed-text"
-TRANSACTION_FOLDER = 'Demo'   # <-- give folder path here
+TRANSACTION_FOLDER = 'Demo'   # <-- folder path here
 
 # Ensure required directories exist
 os.makedirs("output", exist_ok=True)
 os.makedirs("FinalMatches", exist_ok=True)
 
 # Files from master step
-FAISS_INDEX_FILE = "./datastore/master_index.faiss"
+INDEX_FOLDER = "./datastore/cat_indexes"
 METADATA_FILE = "./datastore/metadata.json"
 
 # Column definitions
@@ -33,12 +33,9 @@ def get_embedding(text):
         print(f"|ERROR| Error embedding text: {e}")
         return None
 
-# ----------------- LOAD FAISS & METADATA -----------------
-index = faiss.read_index(FAISS_INDEX_FILE)
+# ----------------- LOAD METADATA -----------------
 with open(METADATA_FILE, "r") as f:
-    metadata = json.load(f)
-
-itemcodes = list(metadata.keys())
+    metadata_nested = json.load(f)
 
 # ----------------- HELPER: Extract numeric from PACKSIZE -----------------
 def extract_numeric(val):
@@ -60,87 +57,61 @@ def process_transaction_file(file_path):
     # Keep full transaction columns
     all_t_columns = list(transaction.columns)
 
-    # ----------------- QUERY TRANSACTIONS -----------------
-    print(f"|INFO| Querying {len(transaction)} transaction rows...")
     results_list = []
 
+    print(f"|INFO| Querying {len(transaction)} transaction rows...")
     for tx_id, row in tqdm(transaction.iterrows(), total=len(transaction), desc="|INFO| Transaction Queries"):
-        # Convert row to string and drop NaNs
         row_values = [str(val).strip() for val in row if pd.notna(val) and str(val).strip() != ""]
         query_text = " ".join(row_values)
 
-        if not row_values:  # completely blank row
-            print(f"|WARNING| Blank row detected at transaction row_id={tx_id}")
-            result_entry = {
-                "t_row_id": tx_id,
-                "rank": None,
-                "matched_itemcode": None,
-                "distance": None
-            }
+        if not row_values:
+            # Blank row
+            result_entry = {"t_row_id": tx_id, "rank": None, "matched_itemcode": None, "distance": None}
             for col in all_t_columns:
                 result_entry[f"t_{col}"] = row[col]
             for k in m_columns:
                 if k != "itemcode":
                     result_entry[f"m_{k}"] = None
             results_list.append(result_entry)
-            continue  # skip FAISS search
+            continue
 
         query_emb = get_embedding(query_text)
+        catcode_target = str(row.get("CATEGORY") or row.get("t_CATEGORY") or "").strip()
+
+        index_path = f"{INDEX_FOLDER}/index_{catcode_target}.faiss"
+        if not os.path.exists(index_path):
+            print(f"|WARN| No index found for catcode={catcode_target}, skipping row {tx_id}")
+            continue
+
+        index = faiss.read_index(index_path)
+        itemcodes = list(metadata_nested.get(catcode_target, {}).keys())
 
         if query_emb is not None and query_emb.shape[0] == index.d:
             query_np = np.array([query_emb]).astype('float32')
-            # Fetch more than needed, say top 50
-            distances, indices = index.search(query_np, k=100)
+            distances, indices = index.search(query_np, k=10)
 
-            # Filter: keep only those where category matches
-            catcode_target = str(row.get("CATEGORY") or row.get("t_CATEGORY") or "").strip()
-            filtered_candidates = []
-
-            for idx, dist in zip(indices[0], distances[0]):
+            for rank, (idx, dist) in enumerate(zip(indices[0], distances[0]), start=1):
+                if idx >= len(itemcodes):
+                    continue
                 itemcode = itemcodes[idx]
-                metadata_item = metadata[itemcode]
+                metadata_item = metadata_nested[catcode_target][itemcode]
 
-                if str(metadata_item.get("catcode", "")).strip() == catcode_target:
-                    filtered_candidates.append((itemcode, dist, metadata_item))
-
-                if len(filtered_candidates) >= 10:  # stop after 10 good ones
-                    break
-
-            # If no matches with category → fallback to first 10 raw results
-            if not filtered_candidates:
-                filtered_candidates = [
-                    (itemcodes[idx], dist, metadata[itemcodes[idx]])
-                    for idx, dist in zip(indices[0][:10], distances[0][:10])
-                ]
-
-            # Now build results_list
-            for rank, (itemcode, dist, metadata_item) in enumerate(filtered_candidates, start=1):
                 result_entry = {
                     "t_row_id": tx_id,
                     "rank": rank,
                     "matched_itemcode": itemcode,
                     "distance": dist
                 }
-
-                # Add ALL transaction columns
                 for col in all_t_columns:
                     result_entry[f"t_{col}"] = row[col]
-
-                # Add master metadata
                 for k, v in metadata_item.items():
                     result_entry[f"m_{k}"] = v
 
                 results_list.append(result_entry)
 
         else:
-            # Embedding failed or wrong dimension → still save row
-            print(f"|WARNING| Could not embed row_id={tx_id}, saving empty match.")
-            result_entry = {
-                "t_row_id": tx_id,
-                "rank": None,
-                "matched_itemcode": None,
-                "distance": None
-            }
+            # Embedding failed
+            result_entry = {"t_row_id": tx_id, "rank": None, "matched_itemcode": None, "distance": None}
             for col in all_t_columns:
                 result_entry[f"t_{col}"] = row[col]
             for k in m_columns:
@@ -168,7 +139,6 @@ def process_transaction_file(file_path):
         t_num = extract_numeric(t_packsize_val)
 
         selected_rows = []
-
         if t_num is not None:
             matches = []
             for _, row in group.iterrows():
@@ -178,7 +148,6 @@ def process_transaction_file(file_path):
                         matches.append(row)
                 except (ValueError, TypeError):
                     continue
-
             if matches:
                 selected_rows = pd.DataFrame(matches).sort_values("rank").head(3).to_dict("records")
 

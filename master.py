@@ -22,7 +22,15 @@ m_columns = ['itemcode', 'catcode', 'company', 'mbrand', 'brand', 'sku',
              'packtype', 'base_pack', 'flavor', 'color', 'wght', 'uom', 'mrp']
 
 # ----------------- LOAD MASTER -----------------
-master = pd.read_csv(MASTER_FILE)
+# Force read wght, uom, mrp as strings to prevent "10.0"
+dtype_map = {
+    "wght": str,
+    "uom": str,
+    "mrp": str
+}
+master = pd.read_csv(MASTER_FILE, dtype=dtype_map)
+
+# Keep only needed columns
 master = master[m_columns]
 
 # ----------------- FUNCTION: EMBEDDING -----------------
@@ -37,18 +45,25 @@ def get_embedding(text):
 
 # ----------------- PREPARE MASTER EMBEDDINGS -----------------
 print(f"|INFO| Generating embeddings for {len(master)} master rows...")
-texts, itemcodes, metadata = [], [], {}
+texts, itemcodes, metadata_nested = [], [], {}
 
 for _, row in tqdm(master.iterrows(), total=len(master), desc="Master Embeddings"):
     itemcode = str(row["itemcode"])
+    catcode = str(row["catcode"])
+
     itemcodes.append(itemcode)
 
-    # Join all fields except itemcode
-    row_text = " ".join(str(val) for col, val in row.items() if col != "itemcode" and pd.notna(val))
+    # Join all fields except itemcode for embedding text
+    row_text = " ".join(
+        str(val) for col, val in row.items()
+        if col != "itemcode" and pd.notna(val)
+    )
     texts.append(row_text)
 
-    # Store metadata
-    metadata[itemcode] = row.drop("itemcode").to_dict()
+    # Build nested metadata: metadata[catcode][itemcode] = {...}
+    if catcode not in metadata_nested:
+        metadata_nested[catcode] = {}
+    metadata_nested[catcode][itemcode] = row.drop("itemcode").to_dict()
 
 # Generate embeddings
 embeddings = []
@@ -77,6 +92,6 @@ index.add(embeddings_np)
 # Save index and metadata
 faiss.write_index(index, FAISS_INDEX_FILE)
 with open(METADATA_FILE, "w") as f:
-    json.dump(metadata, f, indent=2)
+    json.dump(metadata_nested, f, indent=2)
 
-print(f"|INFO| Saved {len(embeddings)} embeddings to {FAISS_INDEX_FILE} and metadata to {METADATA_FILE}")
+print(f"|INFO| Saved {len(embeddings)} embeddings to {FAISS_INDEX_FILE} and metadata (nested by catcode) to {METADATA_FILE}")
