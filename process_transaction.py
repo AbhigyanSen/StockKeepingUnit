@@ -78,7 +78,12 @@ def process_transaction_file(file_path):
         query_emb = get_embedding(query_text)
         catcode_target = str(row.get("CATEGORY") or row.get("t_CATEGORY") or "").strip()
 
+        # --- Catcode remapping ---
+        if catcode_target == "134":
+            catcode_target = "118"
+
         index_path = f"{INDEX_FOLDER}/index_{catcode_target}.faiss"
+                
         if not os.path.exists(index_path):
             print(f"|WARN| No index found for catcode={catcode_target}, skipping row {tx_id}")
             continue
