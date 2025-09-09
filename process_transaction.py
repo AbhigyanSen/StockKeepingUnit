@@ -60,24 +60,34 @@ def process_transaction_file(file_path):
     # Keep full transaction columns
     all_t_columns = list(transaction.columns)
 
+    # Columns to use for embeddings
+    embed_columns = [
+        "CATEGORY", "MANUFACTURE", "BRAND",
+        "ITEMDESC", "MRP", "PACKSIZE", "PACKTYPE"
+    ]
+
     # ----------------- QUERY TRANSACTIONS -----------------
     print(f"|INFO| Querying {len(transaction)} transaction rows...")
     results_list = []
 
     for tx_id, row in tqdm(transaction.iterrows(), total=len(transaction), desc="|INFO| Transaction Queries"):
-        # Convert row to string and drop NaNs
-        row_values = [str(val).strip() for val in row if pd.notna(val) and str(val).strip() != ""]
+        # Use only specified columns for embeddings
+        row_values = [
+            str(row[col]).strip()
+            for col in embed_columns
+            if col in row and pd.notna(row[col]) and str(row[col]).strip() != ""
+        ]
         query_text = " ".join(row_values)
 
-        if not row_values:  # completely blank row
-            print(f"|WARNING| Blank row detected at transaction row_id={tx_id}")
+        if not row_values:  # completely blank for embedding
+            print(f"|WARNING| Blank embedding row detected at transaction row_id={tx_id}")
             result_entry = {
                 "t_row_id": tx_id,
                 "rank": None,
                 "matched_itemcode": None,
                 "distance": None
             }
-            for col in all_t_columns:
+            for col in all_t_columns:  # still keep all transaction columns
                 result_entry[f"t_{col}"] = row[col]
             for k in m_columns:
                 if k != "itemcode":
@@ -102,7 +112,7 @@ def process_transaction_file(file_path):
                     "distance": dist
                 }
 
-                # Add ALL transaction columns
+                # Add ALL transaction columns to output
                 for col in all_t_columns:
                     result_entry[f"t_{col}"] = row[col]
 
@@ -169,7 +179,6 @@ def process_transaction_file(file_path):
     final_df = pd.DataFrame(final_results).drop(columns=["t_row_id"])
     final_df.to_csv(FINAL_OUTPUT_CSV, index=False)
     print(f"|INFO| Saved final filtered top-3 matches to {FINAL_OUTPUT_CSV}")
-
 
 # ----------------- LOOP THROUGH ALL FILES -----------------
 if __name__ == "__main__":
