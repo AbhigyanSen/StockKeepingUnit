@@ -5,7 +5,7 @@ import os
 import glob
 
 # --- Config ---
-INPUT_FOLDER = r"/home/dcsadmin/Documents/del_SKU_AS/StockKeepingUnit/FinalMatches/"  # folder containing all CSV files
+INPUT_FOLDER = "FinalMatches"  # folder containing all CSV files
 OUTPUT_FILE = "Exact.csv"
 
 # --- Helper functions ---

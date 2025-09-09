@@ -9,7 +9,7 @@ import re
 
 # ----------------- CONFIG -----------------
 MODEL_NAME = "nomic-embed-text"
-TRANSACTION_FOLDER = r'Demo'   # <-- give folder path here
+TRANSACTION_FOLDER = 'Demo'   # <-- give folder path here
 
 # Ensure required directories exist
 os.makedirs("output", exist_ok=True)

@@ -6,7 +6,7 @@ import warnings
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 # ---- CONFIG ----
-INPUT_FOLDER = "Demo"
+INPUT_FOLDER = "FinalMatches"
 EVAL_FILE = "Evaluation Summary.csv"
 MISMATCH_FOLDER = "Evaluation"
 os.makedirs(MISMATCH_FOLDER, exist_ok=True)
