@@ -4,7 +4,7 @@ import glob
 
 # Input folder containing CSVs
 input_folder = r"FinalMatches"   # <-- replace with your folder path
-output_folder = os.path.join(input_folder, "FormattedOutput")
+output_folder = os.path.join("TransactionFormatting", "FormattedOutput")
 
 # Create output folder if it doesn't exist
 os.makedirs(output_folder, exist_ok=True)
@@ -28,19 +28,27 @@ for file in glob.glob(os.path.join(input_folder, "*.csv")):
     # Add helper index to preserve original order
     df["_order"] = df.index
 
-    # Group and aggregate
+    # Sort by rank so suggestions stay in correct order
+    df = df.sort_values(["_order", "rank"])
+
+    # Group and collect top 3 suggestions
+    def collect_suggestions(x):
+        codes = x["matched_itemcode"].astype(str).tolist()
+        return pd.Series({
+            "1": codes[0] if len(codes) > 0 else None,
+            "2": codes[1] if len(codes) > 1 else None,
+            "3": codes[2] if len(codes) > 2 else None,
+            "rank": x["rank"].min()  # keep min rank if needed
+        })
+
     formatted_df = (
         df.groupby(present_cols, dropna=False)
-          .agg({
-              "_order": "min",
-              "rank": "min",   # keep first rank; change if you want joined ranks
-              "matched_itemcode": lambda x: " | ".join(x.astype(str).unique())
-          })
+          .apply(collect_suggestions)
           .reset_index()
     )
 
     # Restore original order
-    formatted_df = formatted_df.sort_values("_order").drop(columns="_order")
+    formatted_df = formatted_df.sort_values("rank").reset_index(drop=True)
 
     # Save in FormattedOutput folder with same filename
     output_file = os.path.join(output_folder, os.path.basename(file))

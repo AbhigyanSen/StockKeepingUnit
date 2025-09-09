@@ -89,15 +89,35 @@ def process_transaction_file(file_path):
 
         if query_emb is not None and query_emb.shape[0] == index.d:
             query_np = np.array([query_emb]).astype('float32')
-            distances, indices = index.search(query_np, k=10)
+            # Fetch more than needed, say top 50
+            distances, indices = index.search(query_np, k=100)
 
-            for rank, (idx, dist) in enumerate(zip(indices[0], distances[0])):
+            # Filter: keep only those where category matches
+            catcode_target = str(row.get("CATEGORY") or row.get("t_CATEGORY") or "").strip()
+            filtered_candidates = []
+
+            for idx, dist in zip(indices[0], distances[0]):
                 itemcode = itemcodes[idx]
                 metadata_item = metadata[itemcode]
 
+                if str(metadata_item.get("catcode", "")).strip() == catcode_target:
+                    filtered_candidates.append((itemcode, dist, metadata_item))
+
+                if len(filtered_candidates) >= 10:  # stop after 10 good ones
+                    break
+
+            # If no matches with category → fallback to first 10 raw results
+            if not filtered_candidates:
+                filtered_candidates = [
+                    (itemcodes[idx], dist, metadata[itemcodes[idx]])
+                    for idx, dist in zip(indices[0][:10], distances[0][:10])
+                ]
+
+            # Now build results_list
+            for rank, (itemcode, dist, metadata_item) in enumerate(filtered_candidates, start=1):
                 result_entry = {
                     "t_row_id": tx_id,
-                    "rank": rank + 1,
+                    "rank": rank,
                     "matched_itemcode": itemcode,
                     "distance": dist
                 }
@@ -111,6 +131,7 @@ def process_transaction_file(file_path):
                     result_entry[f"m_{k}"] = v
 
                 results_list.append(result_entry)
+
         else:
             # Embedding failed or wrong dimension → still save row
             print(f"|WARNING| Could not embed row_id={tx_id}, saving empty match.")

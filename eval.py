@@ -103,8 +103,8 @@ def process_file(file_path):
     mismatches.to_csv(mismatch_file, index=False)
 
     print(f"|INFO| Processed {file_path}")
-    print(f"       Results appended to {EVAL_FILE}")
-    print(f"       Mismatched rows saved in {mismatch_file}")
+    # print(f"       Results appended to {EVAL_FILE}")
+    # print(f"       Mismatched rows saved in {mismatch_file}")
 
 
 # ---- MAIN ----
