@@ -108,6 +108,11 @@ def evaluate_folder(output_folder=output_folder, metrics_file=metrics_file):
             print(f"⚠️ Skipping {os.path.basename(file)} (no valid rows).")
             continue
 
+        # ✅ Deduplicate by t_ITEMCODE (keep first occurrence only)
+        if "t_ITEMCODE" in eval_df.columns:
+            eval_df = eval_df.drop_duplicates(subset=["t_ITEMCODE"], keep="first")
+            print(f"   ↪️ Reduced to {len(eval_df)} unique ITEMCODE rows for evaluation")
+
         total_rows = 0
         top1_hits = 0
         top2_hits = 0
