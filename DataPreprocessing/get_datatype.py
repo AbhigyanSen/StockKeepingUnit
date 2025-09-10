@@ -18,6 +18,7 @@ def detect_dtype(series: pd.Series) -> str:
 def summarize_csv_folder(input_folder, output_csv):
     summary = {}
     all_columns = set()
+    dtype_tracker = {}  # <-- Track unique dtypes per column
 
     # Loop through all CSV files in the folder
     for file in os.listdir(input_folder):
@@ -31,8 +32,14 @@ def summarize_csv_folder(input_folder, output_csv):
 
             col_types = {}
             for col in df.columns:
-                col_types[col] = detect_dtype(df[col])
+                dtype = detect_dtype(df[col])
+                col_types[col] = dtype
                 all_columns.add(col)
+
+                # Track unique dtypes
+                if col not in dtype_tracker:
+                    dtype_tracker[col] = set()
+                dtype_tracker[col].add(dtype)
 
             summary[file] = col_types
 
@@ -48,7 +55,12 @@ def summarize_csv_folder(input_folder, output_csv):
 
     # Save to CSV
     result.to_csv(output_csv, index=False)
-    print(f"Summary saved to {output_csv}")
+    print(f"Summary saved to {output_csv}\n")
+
+    # Print unique datatypes for each column
+    print("Unique datatypes per column:\n")
+    for col, dtypes in dtype_tracker.items():
+        print(f"{col}: {dtypes}")
 
 # Example usage:
-summarize_csv_folder("TransactionFormatting\\FormattedOutput", "output_datatype.csv")
+summarize_csv_folder("Demo", "DataPreprocessing\\output_datatype.csv")

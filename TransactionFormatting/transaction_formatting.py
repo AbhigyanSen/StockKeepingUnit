@@ -13,6 +13,7 @@ metrics_file = os.path.join("TransactionFormatting", "Evaluation_metrics.csv")
 
 # ---------------- TRANSACTION COLUMNS ----------------
 txn_cols = [
+    "t_row_id",  # ✅ added here so it is carried forward
     "t_DATE", "t_PERIOD", "t_AUDITYPE", "t_STORECODE", "t_DLRCODE", "t_ITEMCODE",
     "t_NEW_CODES", "t_CATEGORY", "t_MANUFACTURE", "t_BRAND", "t_ITEMDESC", "t_MRP",
     "t_PACKSIZE", "t_PACKTYPE", "t_COMMENTS", "t_IMAGE", "t_CODE COMMENT", "t_FLAG"
@@ -57,6 +58,16 @@ for file in glob.glob(os.path.join(input_folder, "*.csv")):
 
     # Restore original order
     formatted_df = formatted_df.sort_values("rank").reset_index(drop=True)
+    
+    # ✅ Force clean up of codes (avoid floats like 99763433.0)
+    for col in ["t_NEW_CODES", "1", "2", "3"]:
+        if col in formatted_df.columns:
+            formatted_df[col] = (
+                formatted_df[col]
+                .astype(str)
+                .str.strip()
+                .str.replace(r"\.0$", "", regex=True)  # remove trailing .0
+            )
 
     # Save in FormattedOutput folder with same filename
     output_file = os.path.join(output_folder, os.path.basename(file))

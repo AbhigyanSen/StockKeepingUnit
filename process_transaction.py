@@ -192,7 +192,8 @@ def process_transaction_file(file_path):
 
         final_results.extend(selected_rows)
 
-    final_df = pd.DataFrame(final_results).drop(columns=["t_row_id"])
+    # final_df = pd.DataFrame(final_results).drop(columns=["t_row_id"])
+    final_df = pd.DataFrame(final_results)                                  # keep t_row_id
     final_df.to_csv(FINAL_OUTPUT_CSV, index=False)
     print(f"|INFO| Saved final filtered top-3 matches to {FINAL_OUTPUT_CSV}")
 
