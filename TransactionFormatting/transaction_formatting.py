@@ -1,18 +1,10 @@
 import pandas as pd
 import os
 import glob
-import argparse
 from datetime import datetime
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, message="DataFrameGroupBy.apply")
-
-
-# ---------------- ARGUMENT PARSER ----------------
-parser = argparse.ArgumentParser(description="Format transactions and optionally evaluate results.")
-parser.add_argument("--evaluate", action="store_true", help="Enable evaluation and save metrics to CSV")
-args = parser.parse_args()
-EVALUATE = args.evaluate
 
 # ---------------- CONFIG ----------------
 input_folder = r"FinalMatches"  # <-- replace with your folder path
@@ -27,7 +19,6 @@ txn_cols = [
 ]
 
 # ---------------- PROCESSING ----------------
-all_outputs = []  # store (filename, DataFrame) for evaluation
 os.makedirs(output_folder, exist_ok=True)
 
 for file in glob.glob(os.path.join(input_folder, "*.csv")):
@@ -71,45 +62,52 @@ for file in glob.glob(os.path.join(input_folder, "*.csv")):
     output_file = os.path.join(output_folder, os.path.basename(file))
     formatted_df.to_csv(output_file, index=False)
 
-    # If evaluation is enabled, make a clean copy *before grouping*
-    if EVALUATE:
+print(f"✅ All files processed. Results saved in: {output_folder}")
+
+
+# ---------------- EVALUATION FUNCTION ----------------
+def normalize_code(val):
+    """Convert codes to clean comparable strings."""
+    if pd.isna(val):
+        return ""
+    val = str(val).strip()
+    if val.endswith(".0"):  # remove trailing .0
+        val = val[:-2]
+    return val
+
+
+def evaluate_folder(output_folder=output_folder, metrics_file=metrics_file):
+    """Evaluate all CSV files in the formatted output folder."""
+    records = []
+
+    for file in glob.glob(os.path.join(output_folder, "*.csv")):
+        df = pd.read_csv(file)
+
+        # Drop invalid rows (t_NEW_CODES or t_CATEGORY blank/NaN)
         total_before = len(df)
         eval_df = df.dropna(subset=["t_NEW_CODES", "t_CATEGORY"]).copy()
         eval_df = eval_df[(eval_df["t_NEW_CODES"].astype(str).str.strip() != "") &
                           (eval_df["t_CATEGORY"].astype(str).str.strip() != "")]
         total_after = len(eval_df)
         dropped = total_before - total_after
+
         print(f"✅ {os.path.basename(file)}: using {total_after} valid rows (dropped {dropped})")
 
-        # Build grouped dataframe for eval_df only
-        eval_formatted = (
-            eval_df.groupby(present_cols, dropna=False)
-                   .apply(collect_suggestions)
-                   .reset_index()
-                   .sort_values("rank")
-                   .reset_index(drop=True)
-        )
-        all_outputs.append((os.path.basename(file), eval_formatted))
-    else:
-        all_outputs.append((os.path.basename(file), formatted_df))
+        if total_after == 0:
+            print(f"⚠️ Skipping {os.path.basename(file)} (no valid rows).")
+            continue
 
-
-print(f"✅ All files processed. Results saved in: {output_folder}")
-
-# ---------------- EVALUATION ----------------
-def evaluate_accuracy(outputs):
-    records = []
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    for filename, df in outputs:
         total_rows = 0
         top1_hits = 0
         top2_hits = 0
         top3_hits = 0
 
-        for _, row in df.iterrows():
-            true_code = str(row["t_NEW_CODES"]).strip()
-            preds = [str(row.get(str(i), "")) for i in ["1", "2", "3"]]
+        for _, row in eval_df.iterrows():
+            true_code = normalize_code(row["t_NEW_CODES"])
+            preds = [normalize_code(row.get(str(i), "")) for i in ["1", "2", "3"]]
+
+            if not true_code:
+                continue
 
             total_rows += 1
             if true_code == preds[0]:
@@ -119,9 +117,6 @@ def evaluate_accuracy(outputs):
             if true_code in preds[:3]:
                 top3_hits += 1
 
-        if total_rows == 0:
-            continue
-
         # Compute accuracies
         top1_acc = top1_hits / total_rows
         top2_acc = top2_hits / total_rows
@@ -130,8 +125,8 @@ def evaluate_accuracy(outputs):
         # Extra metrics (for Top-3)
         TP = top3_hits
         FN = total_rows - top3_hits
-        FP = total_rows * 3 - TP  # each row predicts 3 codes, only 1 can be true
-        TN = 0  # in multi-class ranking, true negatives not well-defined
+        FP = total_rows * 3 - TP
+        TN = 0
 
         precision = TP / (TP + FP) if (TP + FP) > 0 else 0
         recall = TP / (TP + FN) if (TP + FN) > 0 else 0
@@ -140,8 +135,8 @@ def evaluate_accuracy(outputs):
         type2_error = FN / (FN + TP) if (FN + TP) > 0 else 0
 
         records.append({
-            "filename": filename,
-            "timestamp": timestamp,
+            "filename": os.path.basename(file),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "Top1": round(top1_acc, 4),
             "Top1+Top2": round(top2_acc, 4),
             "Top1+Top2+Top3": round(top3_acc, 4),
@@ -153,11 +148,12 @@ def evaluate_accuracy(outputs):
         })
 
     if not records:
-        print("⚠️ No valid rows for evaluation.")
+        print("⚠️ No evaluation metrics recorded.")
         return
 
-    # Append to CSV (create if doesn't exist)
     df_metrics = pd.DataFrame(records)
+
+    # Append to CSV (create if doesn't exist)
     if os.path.exists(metrics_file):
         df_metrics.to_csv(metrics_file, mode="a", header=False, index=False)
     else:
@@ -165,6 +161,4 @@ def evaluate_accuracy(outputs):
 
     print(f"\n📊 Evaluation completed. Metrics saved to {metrics_file}")
 
-
-if EVALUATE:
-    evaluate_accuracy(all_outputs)
+evaluate_folder()
