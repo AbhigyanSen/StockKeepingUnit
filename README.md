@@ -1,6 +1,6 @@
 # Stock Keeping Unit
 
-![Static Badge](https://img.shields.io/badge/Version_5.3-Embedding_+_Faiss_Matching-yellow)
+![Static Badge](https://img.shields.io/badge/Version_6-Categorical_Matching-white)
 
 ## 🎯 Objective
 
@@ -9,19 +9,30 @@
 > The pipeline matches **transaction SKUs** against a **master catalog** to handle messy product descriptions, pack-size variations, and partial matches.
 
 
-**Version 5.3** introduces a major upgrade: it replaces rule-based/LLM-first matching with a **vector database + retrieval system** (FAISS). It embeds all master SKUs, performs top-k retrieval for each transaction SKU, applies structured filtering, and outputs formatted match reports. Finally, a local **Mistral LLM** can be used for validation and exact match accuracy scoring.
+**Version 6.0** introduces a major upgrade: instead of a single FAISS index, the system builds **per-category indexes** and stores **nested** **metadata** *(catcode → itemcode → attributes)* for better efficiency and more accurate retrieval. The pipeline retrieves candidates per transaction row, applies structured filtering, and generates formatted match reports along with **evaluation metrics**.
 
 <br>
 
-## 🆕 Key Features
+## 🔑 Key Features
 
 - **Master Embedding Pipeline:** Converts master SKUs into dense embeddings using nomic-embed-text.
 - **FAISS Vector Index:** Stores embeddings for fast similarity search.
-- *Transaction Matching:* Retrieves top-k candidate matches per transaction row.
+- **Transaction Matching:** Retrieves top-k candidate matches per transaction row.
 - **Pack Size Filtering:** Numeric weight check to refine matches when available.
 - **Formatted Outputs:** Groups results, aggregates top matches, and outputs cleaner reports.
 - **LLM Re-validation:** Uses Mistral (via Ollama) for semantic verification of candidate matches.
-- **Multi-stage Results:** Raw matches → filtered top-3 matches → formatted outputs → LLM exact match accuracy.
+- **Multi-stage Results:** Raw matches → filtered top-3 matches → formatted outputs → LLM exact match accuracy
+
+<br>
+
+## 🆕 New Features
+
+- **Category-Specific Embedding Pipeline:** Embeds master SKUs and stores them in per-catcode FAISS indexes.
+- **Nested Metadata Store:** Organized as catcode → itemcode → attributes for fast lookup.
+- **Transaction Matching:** Selects category-specific index for each transaction row (with fallback to all categories if needed).
+- **Pack Size Filtering:** Refines top-k candidates by comparing transaction vs. master weights.
+- **Formatted Outputs:** Aggregates candidate matches into cleaner CSV reports.
+- **Evaluation Metrics:** Automatically computes Top-1/Top-3 accuracy, precision, recall, and error rates for the formatted outputs.
 
 <br>
 
@@ -31,12 +42,13 @@
     * `Data/DataCSV/master.csv` – Master SKU reference data.
     * `Demo/*.csv` – Transaction SKUs to be matched. 
 - Output Files
-    * `master_index.faiss` – FAISS index of master embeddings.
-    * `metadata.json` – Metadata for each master itemcode.
+    * `./datastore/cat_indexes/index_<catcode>.faiss` – FAISS indexes for each category.
+    * `./datastore/metadata.json` – Nested metadata for all SKUs grouped by category.
     * `./output/matches_<file>.csv` – Raw match results for each transaction file.
     * `./FinalMatches/final_matches_<file>.csv` – Filtered top-3 matches per transaction row.
     * `./FinalMatches/FormattedOutput/<file>.csv` – Aggregated, cleaner formatted match results.
-    * `Exact.csv` – Final summary of LLM-validated exact match accuracy.
+    <!-- * `Exact.csv` – Final summary of LLM-validated exact match accuracy. -->
+    * `./TransactionFormatting/Evaluation_metrics.csv` – Evaluation results across all formatted outputs.
 
 <br>
 
@@ -115,8 +127,11 @@ StockKeepingUnit/
 📌 `transaction_formatting.py`
 
 - Reads filtered matches from `FinalMatches/`.
-- Groups by transaction columns and aggregates candidate matches.
-- Outputs cleaner reports in `FinalMatches/FormattedOutput/`.
+- Groups by transaction row and collects top-3 candidate codes.
+- Saves cleaned reports in `TransactionFormatting/FormattedOutput/`.
+- Computes evaluation metrics (`Top-1`, `Top-2`, `Top-3` accuracy, precision, recall, Type I/II errors).
+- Appends results to `TransactionFormatting/Evaluation_metrics.csv`.
+
 <br>
 
 📌 `3.py`: **LLM Validation** 
@@ -164,7 +179,7 @@ python process_transaction.py
 python transaction_formatting.py
 
 # Step 4: Run LLM re-validation
-python 3.py
+# python 3.py
 ```
 
 > ⚠️ Ensure Ollama is running in the background with both nomic-embed-text and mistral models available.
@@ -172,12 +187,13 @@ python 3.py
 <br>
 
 ## ✅ Advantages of This Version
-- Fast and **scalable retrieval** via FAISS.
-- Handles messy **SKU descriptions** better than rule-only systems.
-- Pack-size numeric checks reduce false positives.
-- Structured outputs allow for post-processing and reporting.
-- Works fully **offline** with Ollama.
-- LLM adds a semantic **re-validation** step for higher precision.
+
+- Efficient **category-specific FAISS retrieval**.
+- Nested metadata makes master lookup easier.
+- Improved handling of **category mismatches** with fallback search.
+- Pack-size numeric filtering reduces false positives.
+- Outputs are structured and automatically **evaluated** with metrics.
+- **No external API calls** – everything runs offline with Ollama.
 
 <br>
 
@@ -185,11 +201,12 @@ python 3.py
 |Step| Logic Used|
 |:-|:-|
 |Master Embedding|	`nomic-embed-text` via Ollama|
-|Retrieval| FAISS L2 Similarity|
+|Retrieval| Category FAISS Index *(L2 Similarity)*|
 |Pack Size|	Numeric extraction + filtering|
 |Transaction → Master|	Top-k candidates (default k=10, final top-3)|
-|Final Matching| Aggregation of matches per transaction row|
-|LLM Validation| Mistral chooses best `matched_itemcode`|
+|Final Matching| Grouped + formatted matches per transaction row|
+|Evaluation| Accuracy (Top-1/Top-3), Precision, Recall, Error rates|
+<!-- |LLM Validation| Mistral chooses best `matched_itemcode`| -->
 
 <br>
 
@@ -201,6 +218,7 @@ python 3.py
 |**v2**|*LLM-powered item name extraction using Mistral via Ollama*|
 |**v3**|*Integrated LLM + Structured SKU Matching + Fallback Suggestion Engine*|
 |**v5**|*Full embedding pipeline with FAISS retrieval, pack-size filtering, formatted outputs, and LLM re-validation*|
+|**v6**|*Category-specific FAISS indexes, nested metadata, automated evaluation metrics, and simplified offline pipeline*|
 
 <!-- ## 📈Model Metrics
 
@@ -217,5 +235,5 @@ python 3.py
 ## 📌 Notes
 - FAISS similarity is **L2 distance**; lower distance = better match.
 - Pack-size filtering only applies when numeric values exist in both transaction and master.
-- `Exact.csv` summarizes validation performance, but LLM evaluation may vary.
+<!-- - `Exact.csv` summarizes validation performance, but LLM evaluation may vary. -->
 - Matching pipeline is modular — each stage (`embedding → retrieval → filtering → formatting → validation`) can be run independently.
