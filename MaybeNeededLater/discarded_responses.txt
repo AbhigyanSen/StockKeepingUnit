@@ -1,0 +1,11 @@
+2 (since the given description matches "SOFTY BABY PANT/M CRAWLER/4 PICES/PPH" with "SOFTY BABY PANT-MEDIUM(M) PPH 4 NOS")
+
+---
+
+2
+
+The reasoning behind this is that the SKU "SOFTY BABY PANT-MEDIUM(M) PPH 4 NOS" seems to be the best match for the provided description "SOFTY BABY PANT/M CRAWLER/4 PICES/PPH". The words "Baby Pant", "M", and "Crawler" are present in both, while "4 PICES/PPH" corresponds to "4 NOS" (pieces or nos) in the SKU. The other items do not have a "Crawler" attribute and have different quantities.
+
+---
+
+2 (since the given description matches "SOFTY BABY PANT/M CRAWLER" and the quantity "4 PICES" corresponds to "4 NOS" in SKU 2)
