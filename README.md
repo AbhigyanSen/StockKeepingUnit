@@ -56,50 +56,43 @@
 
 ```sh
 StockKeepingUnit/
+├── BestMatchPart/                                      # LLM Part (Still in Development)
+│   └── best_match.py
 ├── Data/
 │   └── Concatenated Data
-│		├── transaction_excluded_jun23.csv      		# Concatenated Transaction with June 23 Excluded
-│		├── transaction_excluded_nov22_jun23.csv        # Concatenated Transaction with Nov 22 & June 23 Excluded        
-│		├── transaction.csv             				# Concatenated Transaction
+│		└── transaction.csv             				# Concatenated Transaction
 │   └── DataCSV/									
 │       └── transaction/
-│		    ├── # Contains all Individual Transaction Sheets 
-│		├── master.csv	
-│   └── Dummies/
-│		├── master_dummy.xlsx                           # Synthetic Master
-│		├── transaction_dummy.xlsx                      # Synthetic Transaction
+│		    └── # Contains all Individual Transaction Sheets 
+│		└── master.csv	
 │	├── master.xlsx                                     # Original Master
 │	└── transaction.xlsx                                # Original Transaction
+├── DataPreprocessing/
+│   ├── datatype_consistency.py                         # Changes the variable Datatype of certain columns
+│	├── get_datatype.py                                 # Checking the Datatype of every column
+│	└── output_datatype.csv                             # Output of get_datatype.py
+├── datastore/                                          # The MOST IMPORTANT FOLDER strong the Metadata and Faiss Index
+│   ├── master_index.faiss
+│   └── metadata.json   										
 ├── Demo/                                               # Testing Multiple Files at Once
-│   └── final_matches_transaction.csv
+│   └── # I Place the files i need to test in this Folder
 ├── Evaluation/
 │   └── # Contains the Results from Eval.py
 ├── FinalMatches/
 │   ├── # Contains the Results from process_transaction.py (Transaction Rows are ReiIterated with 3 Suggestions)
-│   └── FormattedOutput/
-│       └── # Contains the Results from transaction_formatting.py (Every Transaction Row consists of just 3 ItemCodes)
-├── MaybeNeededLater/
-│   ├── discarded_responses.txt                         # Additional Responsed from LLM
-│	├── gpt.py                                          # Checking for Exact Match using Mistral
-│	└── legacy_version.py                               # The OG VERSION
+# ├── MaybeNeededLater/                                 # PLEASE FIND THIS IN VERSION 3
+# │   ├── discarded_responses.txt                       # Additional Responsed from LLM
+# │	├── gpt.py                                          # Checking for Exact Match using Mistral
+# │	└── legacy_version.py                               # The OG VERSION
 ├── output/
 │   └── # Contains the pre-final results from process_transaction.py (Transaction Rows are ReiIterated with 10 Suggestions)
-├── Synthetic/                                          # Final LLM Step
-│   ├── 1.py
-│   ├── 2.py
-│   ├── 3.py
-│   ├── Exact.py                                        # Contains LLM based metrics
-│   ├── log.log
-│   ├── master.csv                                      # Segregated Master from 1.py
-│   └── transaction.csv                                 # Segregated Transaction from 1.py
-├── temp/                                               # The MOST IMPORTANT FOLDER strong the Metadata and Faiss Index
-│   ├── master_index.faiss
-│   └── metadata.json   										
-├── eval.py                                             # Accuracy Evaluation using ItemCodes
-├── Evaluation Summary.csv                              # Evaluation Metrics Filewise
+├── TransactionFormatting/
+│   └── FormattedOutput/
+│       └── # Contains the Results from transaction_formatting.py (Every Transaction Row consists of just 3 ItemCodes)
+│   └── transaction_formatting.py/                      # Formats the Results from Final Matches that is to be Sent to the client along with the Metircs
+├── eval.py                                             # Preceeded by TransactionFormatting in this Version (Therefore, Not Needed)
 ├── master.py                                           # Processes master, prepares the Metadata and Faiss Index
 ├── process_transaction.py                              # Processes transaction and returns 3 Suggestions  
-└── transaction_formatting.py                           # Handles 3 re-iterations for the 3 transaction rows
 ```
 
 <br>
